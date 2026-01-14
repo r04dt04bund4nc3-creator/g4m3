@@ -1,3 +1,4 @@
+// src/audio/AudioEngine.ts
 export class AudioEngine {
   private audioCtx: AudioContext | null = null;
   private sourceNode: AudioBufferSourceNode | null = null;
@@ -10,16 +11,19 @@ export class AudioEngine {
   private readonly MAX_ROWS = 36;
 
   async init(): Promise<void> {
-    if (this.audioCtx) return;
+    if (this.audioCtx && this.audioCtx.state === 'running') return;
     
-    // Use native window AudioContext
     const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
-    this.audioCtx = new AudioContextClass();
+    if (!this.audioCtx) {
+        this.audioCtx = new AudioContextClass();
+    }
     
+    if (this.audioCtx.state === 'suspended') {
+        await this.audioCtx.resume();
+    }
+
     this.eqFilters = [];
     let previousNode: AudioNode | null = null;
-
-    if (!this.audioCtx) return;
 
     for (let i = 0; i < this.MAX_BANDS; i++) {
       const filter = this.audioCtx.createBiquadFilter();
@@ -53,15 +57,11 @@ export class AudioEngine {
 
     this.sourceNode = this.audioCtx.createBufferSource();
     this.sourceNode.buffer = buffer;
-
-    // Connect: Source -> Filters
     this.sourceNode.connect(this.eqFilters[0]);
     
-    // Create Destination
     this.destinationNode = this.audioCtx.createMediaStreamDestination();
     const lastFilter = this.eqFilters[this.MAX_BANDS - 1];
     
-    // Connect End of Chain -> Speakers AND Recorder
     lastFilter.connect(this.audioCtx.destination);
     lastFilter.connect(this.destinationNode);
 
@@ -73,11 +73,9 @@ export class AudioEngine {
             : 'audio/webm';
             
         this.mediaRecorder = new MediaRecorder(this.destinationNode.stream, { mimeType });
-        
         this.mediaRecorder.ondataavailable = (e) => {
             if (e.data.size > 0) this.recordedChunks.push(e.data);
         };
-        
         this.mediaRecorder.start(100);
     } catch (e) {
         console.warn('MediaRecorder failed', e);
@@ -114,4 +112,7 @@ export class AudioEngine {
   }
 }
 
+// Named export
 export const audioEngine = new AudioEngine();
+// DEFAULT EXPORT (Fixes the "Not Seen" error)
+export default audioEngine;

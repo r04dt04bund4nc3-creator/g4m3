@@ -1,9 +1,7 @@
 import React, { useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../state/AppContext';
-
-// FIX: Added '.ts' extension so Vite can find the file
-import { audioEngine } from '../audio/AudioEngine.ts'; 
+import audioEngine from '../audio/AudioEngine'; // Default import
 import { useAnalytics } from '../hooks/useAnalytics';
 
 export const UploadPage: React.FC = () => {
@@ -31,7 +29,7 @@ export const UploadPage: React.FC = () => {
 
         const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
 
-        // --- TRACKING ---
+        // Analytics
         trackEvent('upload_success', {
           duration: audioBuffer.duration,
           fileName: file.name,

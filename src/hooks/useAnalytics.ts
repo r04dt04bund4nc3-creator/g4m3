@@ -1,3 +1,4 @@
+// src/hooks/useAnalytics.ts
 export const useAnalytics = () => {
   const getSessionId = () => {
     let id = localStorage.getItem('abakus_session');
@@ -9,26 +10,26 @@ export const useAnalytics = () => {
   };
 
   const trackEvent = (event: string, metadata: object = {}) => {
-    // YOUR WEBHOOK URL
+    // Your specific Webhook URL from the screenshot
     const ENDPOINT = 'https://webhook.site/52fd93c2-d87a-4ced-a7e4-261e6b04f699';
     
     const payload = JSON.stringify({
       sessionId: getSessionId(),
       event,
-      timestamp: Date.now(),
+      timestamp: new Date().toISOString(),
       ...metadata,
     });
 
-    // Navigator.sendBeacon is more reliable for analytics and ignores CORS issues
+    // Use sendBeacon for background reliability, fallback to fetch
     if (navigator.sendBeacon) {
       navigator.sendBeacon(ENDPOINT, payload);
     } else {
-      // Fallback for older browsers
       fetch(ENDPOINT, {
         method: 'POST',
-        headers: { 'Content-Type': 'text/plain' }, // text/plain prevents CORS preflight
+        mode: 'no-cors', 
+        headers: { 'Content-Type': 'text/plain' },
         body: payload
-      }).catch(err => console.warn('Analytics skipped', err));
+      }).catch(() => {});
     }
   };
 
