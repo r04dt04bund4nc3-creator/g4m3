@@ -1,15 +1,17 @@
-import React from "react";
-import { Header } from "./Header";
+import React from 'react';
 
 export function Shell({ children }: { children: React.ReactNode }) {
   return (
-      <div className="cyber-bg text-white">
-            <div className="relative z-10">
-                    <Header />
-                            <main className="mx-auto w-full max-w-6xl px-4 sm:px-6 pb-16">
-                                      {children}
-                                              </main>
-                                                    </div>
-                                                        </div>
-                                                          );
-                                                          }
+    <div
+      style={{
+        width: '100vw',
+        height: '100vh',
+        position: 'relative',
+        overflow: 'hidden',
+        color: '#fff',
+      }}
+    >
+      {children}
+    </div>
+  );
+}
