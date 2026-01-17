@@ -1,12 +1,12 @@
 // src/pages/ResultPage.tsx
-import React, { useEffect, useCallback } from 'react';
+import React, { useCallback } from 'react'; // Removed useEffect
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../state/AppContext';
 import { useAnalytics } from '../hooks/useAnalytics';
 
 const ResultPage: React.FC = () => {
   const navigate = useNavigate();
-  const { state, ritual, auth, savePerformance, signInWithDiscord } = useApp();
+  const { state, ritual, auth, savePerformance, signInWithDiscord, reset } = useApp(); // Destructure signInWithDiscord and reset
   const { trackEvent } = useAnalytics();
 
   const downloadAudio = useCallback(() => {
@@ -15,8 +15,10 @@ const ResultPage: React.FC = () => {
     const url = URL.createObjectURL(state.recordingBlob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${state.file?.name.replace(/\.[^/.]+$/, '') || 'performance'}-sound-print.webm`;
+    a.download = `${state.file?.name.replace(/\.[^/.]+$/, "") || 'performance'}-sound-print.webm`;
+    document.body.appendChild(a); // Append to body to ensure it's clickable
     a.click();
+    document.body.removeChild(a); // Clean up the element
     URL.revokeObjectURL(url);
 
     trackEvent('download_audio', {
@@ -26,53 +28,38 @@ const ResultPage: React.FC = () => {
   }, [state.recordingBlob, state.file, trackEvent]);
 
   const replayRitual = useCallback(() => {
+    reset(); // Reset the app state before navigating to replay
     navigate('/instrument');
-  }, [navigate]);
+  }, [navigate, reset]);
 
   const returnHome = useCallback(() => {
+    reset(); // Reset the app state before navigating home
     navigate('/');
-  }, [navigate]);
+  }, [navigate, reset]);
 
   const handleSavePerformance = useCallback(async () => {
     if (!auth.user) {
-      await signInWithDiscord();
+      alert("You need to sign in to save your performance.");
       return;
     }
 
     const trackName = state.file?.name || 'Unknown Track';
-    const trackHash = btoa(state.file?.name || '') + '-' + state.file?.size; // simple hash
+    // A simple hash for now. For robust hashing, you'd use a crypto library.
+    const trackHash = btoa(state.file?.name || '') + '-' + state.file?.size; 
 
     await savePerformance(ritual.finalEQState, trackName, trackHash);
     trackEvent('save_performance', { userId: auth.user.id });
-  }, [auth.user, signInWithDiscord, state.file, ritual.finalEQState, savePerformance, trackEvent]);
+    alert("Performance saved successfully!");
+  }, [auth.user, state.file, ritual.finalEQState, savePerformance, trackEvent]);
 
-  // Optional: auto‑download once when they hit this page
-  useEffect(() => {
-    if (state.recordingBlob) {
-      downloadAudio();
-    }
-  }, [state.recordingBlob, downloadAudio]);
+  // Removed useEffect for auto-download. Download is now only on button click.
 
   return (
-    <div
-      style={{
-        width: '100vw',
-        height: '100vh',
-        background: '#050810',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        textAlign: 'center',
-        padding: '2rem',
-        fontFamily: 'monospace',
-        color: '#fff',
-      }}
-    >
-      <h1 style={{ fontSize: '2rem', marginBottom: '1rem' }}>Your Sound Print</h1>
+    <div className="result-page"> {/* Using class for styling */}
+      <h1 style={{ fontSize: '2rem', marginBottom: '1rem' }}>Your Sound Print is Ready</h1>
 
       {/* Thumbnail */}
-      {ritual.soundPrintDataUrl && (
+      {ritual.soundPrintDataUrl ? (
         <img
           src={ritual.soundPrintDataUrl}
           alt="Sound Print Thumbnail"
@@ -82,111 +69,98 @@ const ResultPage: React.FC = () => {
             objectFit: 'contain',
             marginBottom: '1rem',
             border: '2px solid #00ff66',
-            borderRadius: '8px',
+            borderRadius: '8px'
           }}
         />
+      ) : (
+        <div style={{
+          maxWidth: '80%',
+          maxHeight: '300px',
+          width: '400px', // Placeholder size
+          height: '200px', // Placeholder size
+          backgroundColor: '#333',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          color: '#ccc',
+          marginBottom: '1rem',
+          border: '2px dashed #00ff66',
+          borderRadius: '8px'
+        }}>
+          No Visual Sound Print Captured
+        </div>
       )}
 
-      {/* Download + nav */}
-      <div style={{ display: 'flex', gap: '1rem', marginTop: '1.5rem' }}>
+      {/* Actions */}
+      <div className="actions">
         <button
           onClick={downloadAudio}
           disabled={!state.recordingBlob}
-          style={{
-            padding: '0.5rem 1rem',
-            backgroundColor: '#00ff66',
-            color: '#000',
-            border: 'none',
-            borderRadius: '4px',
-            cursor: state.recordingBlob ? 'pointer' : 'not-allowed',
-            fontWeight: 'bold',
-          }}
+          className="download"
         >
-          Download again
+          Download Audio
         </button>
 
         <button
           onClick={replayRitual}
-          style={{
-            padding: '0.5rem 1rem',
-            backgroundColor: '#4ade80',
-            color: '#000',
-            border: 'none',
-            borderRadius: '4px',
-            cursor: 'pointer',
-            fontWeight: 'bold',
-          }}
+          className="replay"
         >
           Replay Ritual
         </button>
 
         <button
           onClick={returnHome}
-          style={{
-            padding: '0.5rem 1rem',
-            backgroundColor: '#6b7280',
-            color: '#fff',
-            border: 'none',
-            borderRadius: '4px',
-            cursor: 'pointer',
-            fontWeight: 'bold',
-          }}
+          className="home"
         >
           Return Home
         </button>
       </div>
 
-      {/* Phase‑4 auth section */}
-      <div style={{ marginTop: '2rem', fontSize: '0.9rem', opacity: 0.9 }}>
-        {auth.isLoading ? (
-          'Checking login…'
-        ) : auth.user ? (
-          <>
-            Signed in as {auth.user.user_metadata?.user_name || 'traveler'}.<br />
-            Performances will be saved to your Sound Prints.
-            <div style={{ marginTop: '0.75rem' }}>
-              <button
-                onClick={handleSavePerformance}
-                style={{
-                  padding: '0.35rem 0.75rem',
-                  backgroundColor: '#00ff66',
-                  color: '#000',
-                  border: 'none',
-                  borderRadius: '4px',
-                  cursor: 'pointer',
-                  fontSize: '0.8rem',
-                  fontWeight: 'bold',
-                }}
-              >
-                Save this performance
-              </button>
-            </div>
-          </>
-        ) : (
-          <>
-            Want to save this as a “Sound Print”?<br />
-            <button
-              onClick={signInWithDiscord}
-              style={{
-                marginTop: '0.5rem',
-                padding: '0.35rem 0.75rem',
-                backgroundColor: '#00ff66',
-                color: '#000',
-                border: 'none',
-                borderRadius: '4px',
-                cursor: 'pointer',
-                fontSize: '0.8rem',
-                fontWeight: 'bold',
-              }}
-            >
-              Sign in with Discord
-            </button>
-            <div style={{ marginTop: '0.5rem', fontSize: '0.7rem', opacity: 0.7 }}>
-              We don’t upload your MP3s. Only your performance data + login are stored.
-            </div>
-          </>
-        )}
+      {/* Save option */}
+      <div className="save-option">
+        {auth.isLoading ? 'Checking login...' :
+         auth.user ? (
+           <button
+             onClick={handleSavePerformance}
+             style={{
+               padding: '0.25rem 0.5rem',
+               backgroundColor: '#00ff66',
+               color: '#000',
+               border: 'none',
+               borderRadius: '4px',
+               cursor: 'pointer',
+               fontSize: '0.8rem',
+             }}
+           >
+             Save to My Library
+           </button>
+         ) : (
+           <div>
+             Want to save this as a "Sound Print"?
+             <br />
+             <button
+               onClick={signInWithDiscord} // Corrected: call signInWithDiscord directly
+               style={{
+                 padding: '0.25rem 0.5rem',
+                 backgroundColor: '#00ff66',
+                 color: '#000',
+                 border: 'none',
+                 borderRadius: '4px',
+                 cursor: 'pointer',
+                 fontSize: '0.8rem',
+                 marginTop: '0.5rem',
+               }}
+             >
+               Sign in with Discord
+             </button>
+           </div>
+         )}
       </div>
+
+      {/* Footer note */}
+      <p className="footer-note">
+        We don’t upload your MP3s. Only your performance data + login are stored.
+      </p>
     </div>
   );
 };
