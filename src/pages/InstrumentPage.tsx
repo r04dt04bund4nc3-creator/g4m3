@@ -14,7 +14,7 @@ import { Ribbon } from '../components/Ribbon';
 
 const MAX_BANDS = 36;
 const MAX_ROWS = 36;
-const RITUAL_DURATION_SEC = 36;
+const RITUAL_DURATION_SEC = 36; // controls when ribbon appears (last 36s of track)
 
 const InstrumentScene: React.FC<{
   activeRows: number[];
@@ -23,6 +23,7 @@ const InstrumentScene: React.FC<{
 }> = ({ activeRows, handleInteraction, showRibbon }) => {
   return (
     <group>
+      {/* Invisible hit plane for pointer/touch input */}
       <mesh
         position={[0, 0, 0.1]}
         visible={false}
@@ -37,6 +38,7 @@ const InstrumentScene: React.FC<{
         <meshBasicMaterial color="red" wireframe />
       </mesh>
 
+      {/* Columns */}
       {BAND_COLORS.map((color, index) => (
         <BandColumn
           key={index}
@@ -48,6 +50,7 @@ const InstrumentScene: React.FC<{
         />
       ))}
 
+      {/* Ribbon appears only when showRibbon === true */}
       <Ribbon
         finalEQState={activeRows}
         maxBands={MAX_BANDS}
@@ -60,7 +63,7 @@ const InstrumentScene: React.FC<{
 
 const InstrumentPage: React.FC = () => {
   const navigate = useNavigate();
-  const { state, saveRecording, setAudioBuffer, ritual, captureSoundPrint } = useApp();
+  const { state, saveRecording, setAudioBuffer, captureSoundPrint } = useApp();
   const { trackEvent } = useAnalytics();
 
   const [isPlaying, setIsPlaying] = useState(false);
@@ -71,14 +74,16 @@ const InstrumentPage: React.FC = () => {
 
   const requestRef = useRef<number | null>(null);
   const startTimeRef = useRef<number>(0);
-  const ritualCompleteRef = useRef(false); // prevents double completion
+  const completedRef = useRef(false); // prevent double-complete
 
-  // If no file/buffer, kick back to landing
+  // Kick back to landing if no file/buffer
   useEffect(() => {
-    if (!state.file && !state.audioBuffer) navigate('/');
+    if (!state.file && !state.audioBuffer) {
+      navigate('/');
+    }
   }, [state.file, state.audioBuffer, navigate]);
 
-  // Decode uploaded file into AudioBuffer (if needed)
+  // Decode the uploaded file into an AudioBuffer (if needed)
   useEffect(() => {
     const decodeAudio = async () => {
       if (state.file && !state.audioBuffer && !isDecoding) {
@@ -124,10 +129,10 @@ const InstrumentPage: React.FC = () => {
     [isPlaying]
   );
 
-  // ONE place that finalizes the ritual (idempotent).
+  // ONE place that finalizes the ritual.
   const handleRitualComplete = useCallback(() => {
-    if (ritualCompleteRef.current) return; // already done
-    ritualCompleteRef.current = true;
+    if (completedRef.current) return;
+    completedRef.current = true;
 
     if (requestRef.current) cancelAnimationFrame(requestRef.current);
 
@@ -136,20 +141,23 @@ const InstrumentPage: React.FC = () => {
       bandsInteracted: activeRows.filter(r => r > -1).length,
     });
 
-    // Capture the canvas frame as the Sound Print image
+    // Capture the canvas as the Sound Print image
     const canvas = document.querySelector('canvas') as HTMLCanvasElement | null;
     if (canvas) {
       const dataUrl = canvas.toDataURL('image/png');
-      captureSoundPrint(dataUrl); // sets ritual.phase = 'complete'
+      captureSoundPrint(dataUrl);
     }
 
     const blob = audioEngine.getRecordingBlob();
     if (blob) {
       saveRecording(blob, activeRows);
     }
-  }, [activeRows, captureSoundPrint, saveRecording, trackEvent]);
 
-  // Animation & countdown loop.
+    // Go straight to result/login gate
+    navigate('/result');
+  }, [activeRows, captureSoundPrint, saveRecording, navigate, trackEvent]);
+
+  // Keeps timer + ribbon in sync with the audio buffer
   const updateLoop = useCallback(() => {
     if (!startTimeRef.current) return;
 
@@ -159,37 +167,25 @@ const InstrumentPage: React.FC = () => {
 
     setTimeLeft(remaining);
 
-    // Show ribbon in last 36 seconds of the track
+    // This is your original behavior: show ribbon in last 36s of the track
     if (remaining <= RITUAL_DURATION_SEC && !showRibbon) {
       setShowRibbon(true);
     }
 
-    // HARD CAP: finish ritual at 36 seconds of interaction time
-    if (!ritualCompleteRef.current && elapsed >= RITUAL_DURATION_SEC) {
-      handleRitualComplete();
-      return; // stop scheduling more frames
-    }
-
+    // Keep looping while audio is playing; onended will call handleRitualComplete
     requestRef.current = requestAnimationFrame(updateLoop);
-  }, [state.audioBuffer, showRibbon, handleRitualComplete]);
-
-  // When ritual.phase flips to 'complete', navigate to the result/login gate page
-  useEffect(() => {
-    if (ritual.phase === 'complete') {
-      navigate('/result');
-    }
-  }, [ritual.phase, navigate]);
+  }, [state.audioBuffer, showRibbon]);
 
   const startRitual = async () => {
     if (isPlaying || !state.audioBuffer) return;
 
     try {
-      ritualCompleteRef.current = false; // reset completion flag
+      completedRef.current = false;
       await audioEngine.init();
       trackEvent('ritual_start');
 
       audioEngine.startPlayback(state.audioBuffer, () => {
-        // Fallback: if audio ends before 36s, still complete ritual
+        // Audio finished; finalize ritual
         handleRitualComplete();
       });
 
@@ -202,7 +198,6 @@ const InstrumentPage: React.FC = () => {
     }
   };
 
-  // Cleanup on unmount
   useEffect(() => {
     return () => {
       audioEngine.stop();
@@ -220,6 +215,7 @@ const InstrumentPage: React.FC = () => {
         overflow: 'hidden',
       }}
     >
+      {/* 3D instrument */}
       <div
         style={{
           width: '100%',
@@ -244,6 +240,7 @@ const InstrumentPage: React.FC = () => {
         </Canvas>
       </div>
 
+      {/* Launch overlay */}
       {!isPlaying && (
         <div
           style={{
@@ -300,6 +297,7 @@ const InstrumentPage: React.FC = () => {
         </div>
       )}
 
+      {/* Countdown */}
       {isPlaying && (
         <div
           style={{
