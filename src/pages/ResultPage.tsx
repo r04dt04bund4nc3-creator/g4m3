@@ -6,7 +6,7 @@ import { useAnalytics } from '../hooks/useAnalytics';
 
 const ResultPage: React.FC = () => {
   const navigate = useNavigate();
-  const { state, ritual, auth, savePerformance } = useApp();
+  const { state, ritual, auth, savePerformance, signInWithDiscord } = useApp();
   const { trackEvent } = useAnalytics();
 
   const downloadAudio = useCallback(() => {
@@ -15,7 +15,7 @@ const ResultPage: React.FC = () => {
     const url = URL.createObjectURL(state.recordingBlob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${state.file?.name.replace(/\.[^/.]+$/, "") || 'performance'}-sound-print.webm`;
+    a.download = `${state.file?.name.replace(/\.[^/.]+$/, '') || 'performance'}-sound-print.webm`;
     a.click();
     URL.revokeObjectURL(url);
 
@@ -35,60 +35,61 @@ const ResultPage: React.FC = () => {
 
   const handleSavePerformance = useCallback(async () => {
     if (!auth.user) {
-      alert("You need to sign in to save your performance.");
+      await signInWithDiscord();
       return;
     }
 
     const trackName = state.file?.name || 'Unknown Track';
-    const trackHash = btoa(state.file?.name || '') + '-' + state.file?.size; // Simple hash for now
+    const trackHash = btoa(state.file?.name || '') + '-' + state.file?.size; // simple hash
 
     await savePerformance(ritual.finalEQState, trackName, trackHash);
     trackEvent('save_performance', { userId: auth.user.id });
-    alert("Performance saved successfully!");
-  }, [auth.user, state.file, ritual.finalEQState, savePerformance, trackEvent]);
+  }, [auth.user, signInWithDiscord, state.file, ritual.finalEQState, savePerformance, trackEvent]);
 
+  // Optional: auto‑download once when they hit this page
   useEffect(() => {
-    // Auto-download if logged in and recording exists
-    if (state.recordingBlob && auth.user) {
+    if (state.recordingBlob) {
       downloadAudio();
     }
-  }, [state.recordingBlob, auth.user, downloadAudio]);
+  }, [state.recordingBlob, downloadAudio]);
 
   return (
-    <div style={{
-      width: '100vw',
-      height: '100vh',
-      background: '#050810',
-      display: 'flex',
-      flexDirection: 'column',
-      alignItems: 'center',
-      justifyContent: 'center',
-      textAlign: 'center',
-      padding: '2rem',
-      fontFamily: 'monospace',
-      color: '#fff',
-    }}>
-      <h1 style={{ fontSize: '2rem', marginBottom: '1rem' }}>Your Sound Print is Ready</h1>
+    <div
+      style={{
+        width: '100vw',
+        height: '100vh',
+        background: '#050810',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        textAlign: 'center',
+        padding: '2rem',
+        fontFamily: 'monospace',
+        color: '#fff',
+      }}
+    >
+      <h1 style={{ fontSize: '2rem', marginBottom: '1rem' }}>Your Sound Print</h1>
 
       {/* Thumbnail */}
       {ritual.soundPrintDataUrl && (
-        <img 
-          src={ritual.soundPrintDataUrl} 
-          alt="Sound Print Thumbnail" 
-          style={{ 
-            maxWidth: '80%', 
-            maxHeight: '300px', 
-            objectFit: 'contain', 
+        <img
+          src={ritual.soundPrintDataUrl}
+          alt="Sound Print Thumbnail"
+          style={{
+            maxWidth: '80%',
+            maxHeight: '300px',
+            objectFit: 'contain',
             marginBottom: '1rem',
             border: '2px solid #00ff66',
-            borderRadius: '8px'
-          }} 
+            borderRadius: '8px',
+          }}
         />
       )}
 
-      {/* Actions */}
-      <div style={{ display: 'flex', gap: '1rem', marginTop: '2rem' }}>
-        <button 
+      {/* Download + nav */}
+      <div style={{ display: 'flex', gap: '1rem', marginTop: '1.5rem' }}>
+        <button
           onClick={downloadAudio}
           disabled={!state.recordingBlob}
           style={{
@@ -101,10 +102,10 @@ const ResultPage: React.FC = () => {
             fontWeight: 'bold',
           }}
         >
-          Download Audio
+          Download again
         </button>
 
-        <button 
+        <button
           onClick={replayRitual}
           style={{
             padding: '0.5rem 1rem',
@@ -119,7 +120,7 @@ const ResultPage: React.FC = () => {
           Replay Ritual
         </button>
 
-        <button 
+        <button
           onClick={returnHome}
           style={{
             padding: '0.5rem 1rem',
@@ -135,53 +136,57 @@ const ResultPage: React.FC = () => {
         </button>
       </div>
 
-      {/* Save option */}
-      <div style={{ marginTop: '2rem', fontSize: '0.8rem', opacity: 0.8 }}>
-        {auth.isLoading ? 'Checking login...' :
-         auth.user ? (
-           <button 
-             onClick={handleSavePerformance}
-             style={{
-               padding: '0.25rem 0.5rem',
-               backgroundColor: '#00ff66',
-               color: '#000',
-               border: 'none',
-               borderRadius: '4px',
-               cursor: 'pointer',
-               fontSize: '0.8rem',
-             }}
-           >
-             Save to My Library
-           </button>
-         ) : (
-           <div>
-             Want to save this? <br />
-             <button 
-               onClick={() => {
-                 const { signInWithDiscord } = useApp(); // Not available here — we’ll use context
-                 // Instead, we’ll add a helper in AppContext
-                 signInWithDiscord();
-               }}
-               style={{
-                 padding: '0.25rem 0.5rem',
-                 backgroundColor: '#00ff66',
-                 color: '#000',
-                 border: 'none',
-                 borderRadius: '4px',
-                 cursor: 'pointer',
-                 fontSize: '0.8rem',
-               }}
-             >
-               Sign in with Discord
-             </button>
-           </div>
-         )}
+      {/* Phase‑4 auth section */}
+      <div style={{ marginTop: '2rem', fontSize: '0.9rem', opacity: 0.9 }}>
+        {auth.isLoading ? (
+          'Checking login…'
+        ) : auth.user ? (
+          <>
+            Signed in as {auth.user.user_metadata?.user_name || 'traveler'}.<br />
+            Performances will be saved to your Sound Prints.
+            <div style={{ marginTop: '0.75rem' }}>
+              <button
+                onClick={handleSavePerformance}
+                style={{
+                  padding: '0.35rem 0.75rem',
+                  backgroundColor: '#00ff66',
+                  color: '#000',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  fontSize: '0.8rem',
+                  fontWeight: 'bold',
+                }}
+              >
+                Save this performance
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            Want to save this as a “Sound Print”?<br />
+            <button
+              onClick={signInWithDiscord}
+              style={{
+                marginTop: '0.5rem',
+                padding: '0.35rem 0.75rem',
+                backgroundColor: '#00ff66',
+                color: '#000',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                fontSize: '0.8rem',
+                fontWeight: 'bold',
+              }}
+            >
+              Sign in with Discord
+            </button>
+            <div style={{ marginTop: '0.5rem', fontSize: '0.7rem', opacity: 0.7 }}>
+              We don’t upload your MP3s. Only your performance data + login are stored.
+            </div>
+          </>
+        )}
       </div>
-
-      {/* Footer note */}
-      <p style={{ marginTop: '2rem', fontSize: '0.7rem', opacity: 0.6 }}>
-        We don’t upload your MP3s. Only your performance data + login are stored.
-      </p>
     </div>
   );
 };
