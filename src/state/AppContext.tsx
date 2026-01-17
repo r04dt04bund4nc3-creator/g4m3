@@ -2,6 +2,7 @@
 import { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import type { ReactNode } from 'react';
 import { supabase } from '../lib/supabaseClient';
+import type { Session, AuthError } from '@supabase/supabase-js';
 
 interface AudioState {
   file: File | null;
@@ -22,7 +23,7 @@ interface RitualState {
 }
 
 interface AuthState {
-  user: any | null;
+  user: Session['user'] | null;
   isLoading: boolean;
   error: string | null;
 }
@@ -44,6 +45,8 @@ interface AppContextType {
   saveRecording: (blob: Blob, finalEQ: number[]) => void;
   reset: () => void;
   signInWithDiscord: () => Promise<void>;
+  signInWithGoogle: () => Promise<void>;
+  signInWithEmail: (email: string, password: string) => Promise<{ error: AuthError | null }>;
   signOut: () => Promise<void>;
   savePerformance: (gestureData: any, trackName: string, trackHash: string) => Promise<void>;
 }
@@ -80,16 +83,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [auth, setAuth] = useState<AuthState>(initialAuthState);
 
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === 'SIGNED_IN') {
-        setAuth(prev => ({ ...prev, user: session?.user, isLoading: false }));
-      } else if (event === 'SIGNED_OUT') {
-        setAuth(prev => ({ ...prev, user: null, isLoading: false }));
-      }
+    // Listen for auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setAuth(prev => ({ ...prev, user: session?.user || null, isLoading: false }));
     });
 
+    // Check initial session
     supabase.auth.getSession().then(({ data: { session } }) => {
-      setAuth(prev => ({ ...prev, user: session?.user, isLoading: false }));
+      setAuth(prev => ({ ...prev, user: session?.user || null, isLoading: false }));
     });
 
     return () => {
@@ -140,7 +141,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (data.dataUrl) captureSoundPrint(data.dataUrl);
   }, [captureSoundPrint]);
 
-  // FIX: Updated to accept both the audio blob AND the visual EQ state
   const saveRecording = useCallback((blob: Blob, finalEQ: number[]) => {
     setAudio(prev => ({ ...prev, recordingBlob: blob }));
     setRitual(prev => ({ ...prev, finalEQState: finalEQ, phase: 'capture', isRecording: false }));
@@ -151,20 +151,44 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setRitual(initialRitualState);
   }, []);
 
+  // --- Auth Functions ---
+
+  const getRedirectUrl = () => {
+    return import.meta.env.PROD
+      ? 'https://g4m3.netlify.app/auth/callback' 
+      : 'http://localhost:5173/auth/callback'; // Make sure this matches your dev URL
+  };
+
   const signInWithDiscord = useCallback(async () => {
     try {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'discord',
-        options: {
-          redirectTo: import.meta.env.PROD 
-            ? 'https://g4m3.netlify.app/auth/callback'
-            : 'http://localhost:5173/auth/callback'
-        }
+        options: { redirectTo: getRedirectUrl() }
       });
       if (error) throw error;
     } catch (err: any) {
       setAuth(prev => ({ ...prev, error: err.message }));
     }
+  }, []);
+
+  const signInWithGoogle = useCallback(async () => {
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: { redirectTo: getRedirectUrl() }
+      });
+      if (error) throw error;
+    } catch (err: any) {
+      setAuth(prev => ({ ...prev, error: err.message }));
+    }
+  }, []);
+
+  const signInWithEmail = useCallback(async (email: string, password: string) => {
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) {
+        setAuth(prev => ({ ...prev, error: error.message }));
+    }
+    return { error };
   }, []);
 
   const signOut = useCallback(async () => {
@@ -209,6 +233,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       saveRecording,
       reset,
       signInWithDiscord,
+      signInWithGoogle,
+      signInWithEmail,
       signOut,
       savePerformance,
     }}>

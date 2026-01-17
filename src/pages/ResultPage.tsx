@@ -3,10 +3,11 @@ import React, { useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../state/AppContext';
 import { useAnalytics } from '../hooks/useAnalytics';
+import { AuthForm } from '../components/AuthForm'; // Import the AuthForm
 
 const ResultPage: React.FC = () => {
   const navigate = useNavigate();
-  const { state, ritual, auth, savePerformance, signInWithDiscord, reset } = useApp();
+  const { state, ritual, auth, savePerformance, signOut, reset } = useApp();
   const { trackEvent } = useAnalytics();
 
   const downloadAudio = useCallback(() => {
@@ -41,7 +42,7 @@ const ResultPage: React.FC = () => {
     if (!auth.user) return;
 
     const trackName = state.file?.name || 'Unknown Track';
-    const trackHash = btoa(state.file?.name || '') + '-' + state.file?.size; 
+    const trackHash = btoa(state.file?.name || '') + '-' + state.file?.size;
 
     await savePerformance(ritual.finalEQState, trackName, trackHash);
     trackEvent('save_performance', { userId: auth.user.id });
@@ -49,7 +50,7 @@ const ResultPage: React.FC = () => {
   }, [auth.user, state.file, ritual.finalEQState, savePerformance, trackEvent]);
 
   return (
-    <div className="result-page" style={{
+    <div style={{
       width: '100vw',
       height: '100vh',
       display: 'flex',
@@ -78,76 +79,140 @@ const ResultPage: React.FC = () => {
             }}
           />
         ) : (
-          <div style={{ width: '300px', height: '200px', border: '1px dashed #333' }} />
+          <div style={{
+            width: '300px',
+            height: '200px',
+            border: '1px dashed #333',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: '#ccc'
+          }}>
+            Capturing Visual...
+          </div>
         )}
       </div>
 
-      {/* Primary Navigation Actions */}
-      <div style={{ display: 'flex', gap: '15px', marginBottom: '30px' }}>
-        <button 
-          onClick={downloadAudio} 
-          disabled={!state.recordingBlob}
-          style={{
-            padding: '10px 20px',
-            backgroundColor: '#00ff66',
-            color: '#000',
-            border: 'none',
-            borderRadius: '4px',
-            cursor: 'pointer',
-            fontWeight: 'bold'
-          }}
-        >
-          DOWNLOAD AUDIO
-        </button>
-
-        <button onClick={replayRitual} style={{ padding: '10px 20px', backgroundColor: '#4ade80', color: '#000', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
-          REPLAY RITUAL
-        </button>
-
-        <button onClick={returnHome} style={{ padding: '10px 20px', backgroundColor: '#333', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
-          RETURN HOME
-        </button>
-      </div>
-
-      {/* Auth-specific Save Action */}
-      <div style={{ marginTop: '10px' }}>
-        {auth.isLoading ? (
-          <span style={{ opacity: 0.5 }}>SYNCHRONIZING...</span>
-        ) : auth.user ? (
-          <button
-            onClick={handleSavePerformance}
-            style={{
-              padding: '8px 16px',
-              backgroundColor: 'transparent',
-              color: '#00ff66',
-              border: '1px solid #00ff66',
-              borderRadius: '4px',
-              cursor: 'pointer',
-              fontSize: '0.8rem'
-            }}
-          >
-            SAVE TO LIBRARY
-          </button>
-        ) : (
-          <div style={{ textAlign: 'center' }}>
+      {auth.isLoading ? (
+        <p style={{ color: '#fff' }}>Loading session...</p>
+      ) : auth.user ? (
+        // LOGGED-IN VIEW
+        <>
+          <p style={{ marginBottom: '1rem', color: '#fff' }}>Signed in as {auth.user.email}</p>
+          <div style={{ display: 'flex', gap: '15px', marginBottom: '20px' }}>
             <button
-              onClick={signInWithDiscord}
+              onClick={downloadAudio}
               style={{
-                padding: '10px 24px',
-                backgroundColor: '#5865F2', // Discord Blue
-                color: '#fff',
+                padding: '10px 20px',
+                backgroundColor: '#00ff66',
+                color: '#000',
                 border: 'none',
                 borderRadius: '4px',
                 cursor: 'pointer',
                 fontWeight: 'bold'
               }}
             >
-              SIGN IN WITH DISCORD TO SAVE
+              DOWNLOAD AUDIO
+            </button>
+
+            <button
+              onClick={handleSavePerformance}
+              style={{
+                padding: '10px 20px',
+                backgroundColor: 'transparent',
+                color: '#00ff66',
+                border: '1px solid #00ff66',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                fontWeight: 'bold'
+              }}
+            >
+              SAVE TO LIBRARY
             </button>
           </div>
-        )}
-      </div>
+          <div style={{ display: 'flex', gap: '15px' }}>
+            <button
+              onClick={replayRitual}
+              style={{
+                padding: '10px 20px',
+                backgroundColor: '#4ade80',
+                color: '#000',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer'
+              }}
+            >
+              REPLAY RITUAL
+            </button>
 
+            <button
+              onClick={returnHome}
+              style={{
+                padding: '10px 20px',
+                backgroundColor: '#333',
+                color: '#fff',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer'
+              }}
+            >
+              RETURN HOME
+            </button>
+
+            <button
+              onClick={signOut}
+              style={{
+                padding: '10px 20px',
+                backgroundColor: '#6b7280',
+                color: '#fff',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer'
+              }}
+            >
+              SIGN OUT
+            </button>
+          </div>
+        </>
+      ) : (
+        // LOGGED-OUT VIEW
+        <>
+          <AuthForm />
+          <div style={{ display: 'flex', gap: '15px', marginTop: '30px' }}>
+            <button
+              onClick={replayRitual}
+              style={{
+                padding: '10px 20px',
+                backgroundColor: '#4ade80',
+                color: '#000',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer'
+              }}
+            >
+              REPLAY RITUAL
+            </button>
+
+            <button
+              onClick={returnHome}
+              style={{
+                padding: '10px 20px',
+                backgroundColor: '#333',
+                color: '#fff',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer'
+              }}
+            >
+              RETURN HOME
+            </button>
+          </div>
+        </>
+      )}
+
+      <p style={{ marginTop: '40px', fontSize: '0.7rem', opacity: 0.4, maxWidth: '300px', textAlign: 'center', color: '#fff' }}>
+        ONLY PERFORMANCE DATA + LOGIN ARE STORED. WE DO NOT UPLOAD YOUR AUDIO FILES.
+      </p>
     </div>
   );
 };

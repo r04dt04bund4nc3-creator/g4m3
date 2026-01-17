@@ -1,3 +1,4 @@
+// src/pages/InstrumentPage.tsx
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { Canvas } from '@react-three/fiber';
 import type { ThreeEvent } from '@react-three/fiber';
@@ -59,12 +60,7 @@ const InstrumentScene: React.FC<{
 
 const InstrumentPage: React.FC = () => {
   const navigate = useNavigate();
-  const {
-    state,
-    saveRecording,
-    setAudioBuffer,
-    captureSoundPrint,
-  } = useApp();
+  const { state, saveRecording, setAudioBuffer, ritual, captureSoundPrint } = useApp(); // Added captureSoundPrint
   const { trackEvent } = useAnalytics();
 
   const [isPlaying, setIsPlaying] = useState(false);
@@ -144,15 +140,22 @@ const InstrumentPage: React.FC = () => {
     const canvas = document.querySelector('canvas');
     if (canvas) {
       const dataUrl = canvas.toDataURL('image/png');
-      captureSoundPrint(dataUrl);
+      captureSoundPrint(dataUrl); // This will trigger the navigation via useEffect below
     }
 
     const blob = audioEngine.getRecordingBlob();
     if (blob) {
       saveRecording(blob, activeRows);
     }
-    navigate("/result");
-  }, [activeRows, navigate, saveRecording, captureSoundPrint, trackEvent]);
+    // REMOVED: navigate("/result") call is gone from here.
+  }, [activeRows, saveRecording, captureSoundPrint, trackEvent]);
+
+  // NEW: This useEffect handles navigation after the sound print is captured
+  useEffect(() => {
+    if (ritual.phase === 'complete') {
+      navigate("/result");
+    }
+  }, [ritual.phase, navigate]);
 
   const startRitual = async () => {
     if (isPlaying || !state.audioBuffer) return;
