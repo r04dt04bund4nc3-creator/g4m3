@@ -18,7 +18,7 @@ interface RitualState {
   phase: 'upload' | 'ritual' | 'capture' | 'complete';
   countdown: number;
   soundPrintDataUrl: string | null;
-  finalEQState: number[]; // Stores the visual pattern from the instrument
+  finalEQState: number[];
   isRecording: boolean;
 }
 
@@ -30,7 +30,7 @@ interface AuthState {
 
 interface AppContextType {
   audio: AudioState;
-  state: AudioState; // Alias for easier access
+  state: AudioState;
   ritual: RitualState;
   auth: AuthState;
   setFile: (file: File) => void;
@@ -40,7 +40,7 @@ interface AppContextType {
   updateCurrentTime: (time: number) => void;
   setRitualPhase: (phase: RitualState['phase']) => void;
   setCountdown: (count: number) => void;
-  setSoundPrint: (data: any) => void; 
+  setSoundPrint: (data: any) => void;
   captureSoundPrint: (dataUrl: string) => void;
   saveRecording: (blob: Blob, finalEQ: number[]) => void;
   reset: () => void;
@@ -83,12 +83,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [auth, setAuth] = useState<AuthState>(initialAuthState);
 
   useEffect(() => {
-    // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setAuth(prev => ({ ...prev, user: session?.user || null, isLoading: false, error: null }));
     });
 
-    // Check initial session
     supabase.auth.getSession().then(({ data: { session } }) => {
       setAuth(prev => ({ ...prev, user: session?.user || null, isLoading: false, error: null }));
     });
@@ -105,11 +103,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const setAudioFile = setFile;
 
   const setAudioBuffer = useCallback((buffer: AudioBuffer) => {
-    setAudio(prev => ({ 
-      ...prev, 
-      audioBuffer: buffer, 
-      isProcessing: false, 
-      duration: buffer.duration 
+    setAudio(prev => ({
+      ...prev,
+      audioBuffer: buffer,
+      isProcessing: false,
+      duration: buffer.duration,
     }));
   }, []);
 
@@ -130,11 +128,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const captureSoundPrint = useCallback((dataUrl: string) => {
-    console.log("Sound Print captured successfully:", dataUrl.slice(0,50) + "...");
-    setRitual(prev => ({ 
-      ...prev, 
+    console.log('Sound Print captured:', dataUrl.slice(0, 50) + '...');
+    setRitual(prev => ({
+      ...prev,
       soundPrintDataUrl: dataUrl,
-      phase: 'complete' 
+      phase: 'complete',
     }));
   }, []);
 
@@ -154,23 +152,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   // --- Auth Functions ---
 
-  // Found the getRedirectUrl function in AppContext.tsx and replaced it with this:
-const getRedirectUrl = () => {
-  if (typeof window !== 'undefined') {
-    // This dynamically captures your exact Codespace URL including the -5173 port
-    const origin = window.location.origin;
-    return `${origin}/auth/callback`;
-  }
-  return 'https://redesigned-disco-r4qjwwp7wrijj2wq44-5173.app.github.dev/auth/callback';
-};
-
   const signInWithDiscord = useCallback(async () => {
     try {
       setAuth(prev => ({ ...prev, error: null }));
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'discord',
-        options: { redirectTo: getRedirectUrl() }
-      });
+      }); // Supabase uses Site URL
       if (error) throw error;
     } catch (err: any) {
       setAuth(prev => ({ ...prev, error: err.message }));
@@ -182,8 +169,7 @@ const getRedirectUrl = () => {
       setAuth(prev => ({ ...prev, error: null }));
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
-        options: { redirectTo: getRedirectUrl() }
-      });
+      }); // Supabase uses Site URL
       if (error) throw error;
     } catch (err: any) {
       setAuth(prev => ({ ...prev, error: err.message }));
@@ -194,7 +180,7 @@ const getRedirectUrl = () => {
     setAuth(prev => ({ ...prev, error: null }));
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) {
-        setAuth(prev => ({ ...prev, error: error.message }));
+      setAuth(prev => ({ ...prev, error: error.message }));
     }
     return { error };
   }, []);
@@ -204,48 +190,53 @@ const getRedirectUrl = () => {
     if (error) console.error('Sign out error:', error);
   }, []);
 
-  const savePerformance = useCallback(async (gestureData: any, trackName: string, trackHash: string) => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
+  const savePerformance = useCallback(
+    async (gestureData: any, trackName: string, trackHash: string) => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
 
-    const { error } = await supabase
-      .from('performances')
-      .insert({
-        user_id: user.id,
-        track_name: trackName,
-        track_hash: trackHash,
-        gesture_data: gestureData,
-        thumbnail_data_url: ritual.soundPrintDataUrl || null
-      });
+      const { error } = await supabase
+        .from('performances')
+        .insert({
+          user_id: user.id,
+          track_name: trackName,
+          track_hash: trackHash,
+          gesture_data: gestureData,
+          thumbnail_data_url: ritual.soundPrintDataUrl || null,
+        });
 
-    if (error) {
-      console.error('Error saving performance:', error);
-    }
-  }, [ritual.soundPrintDataUrl]);
+      if (error) {
+        console.error('Error saving performance:', error);
+      }
+    },
+    [ritual.soundPrintDataUrl]
+  );
 
   return (
-    <AppContext.Provider value={{
-      audio,
-      state: audio,
-      ritual,
-      auth,
-      setFile,
-      setAudioFile,
-      setAudioBuffer,
-      setPlaying,
-      updateCurrentTime,
-      setRitualPhase,
-      setCountdown,
-      setSoundPrint,
-      captureSoundPrint,
-      saveRecording,
-      reset,
-      signInWithDiscord,
-      signInWithGoogle,
-      signInWithEmail,
-      signOut,
-      savePerformance,
-    }}>
+    <AppContext.Provider
+      value={{
+        audio,
+        state: audio,
+        ritual,
+        auth,
+        setFile,
+        setAudioFile,
+        setAudioBuffer,
+        setPlaying,
+        updateCurrentTime,
+        setRitualPhase,
+        setCountdown,
+        setSoundPrint,
+        captureSoundPrint,
+        saveRecording,
+        reset,
+        signInWithDiscord,
+        signInWithGoogle,
+        signInWithEmail,
+        signOut,
+        savePerformance,
+      }}
+    >
       {children}
     </AppContext.Provider>
   );

@@ -1,13 +1,14 @@
 // src/App.tsx
-import { useEffect } from 'react'; // Added useEffect
+import { useEffect } from 'react';
 import { Routes, Route } from 'react-router-dom';
 import { AppProvider } from './state/AppContext';
-import { useAnalytics } from './hooks/useAnalytics'; // Added Hook
+import { useAnalytics } from './hooks/useAnalytics';
 
 import { Shell } from './components/layout/Shell';
 import { UploadPage } from './pages/UploadPage';
 import InstrumentPage from './pages/InstrumentPage';
-import ResultPage from './pages/ResultPage'; // NEW
+import ResultPage from './pages/ResultPage';
+import AuthCallbackPage from './pages/AuthCallbackPage'; // New import
 
 function App() {
   const { trackEvent } = useAnalytics();
@@ -44,6 +45,8 @@ function App() {
             </Shell>
           }
         />
+        // Auth callback route - no Shell wrapper needed for this temporary page
+        <Route path="/auth/callback" element={<AuthCallbackPage />} />
       </Routes>
     </AppProvider>
   );
