@@ -130,6 +130,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const captureSoundPrint = useCallback((dataUrl: string) => {
+    console.log("Sound Print captured successfully:", dataUrl.slice(0,50) + "...");
     setRitual(prev => ({ 
       ...prev, 
       soundPrintDataUrl: dataUrl,
@@ -153,16 +154,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   // --- Auth Functions ---
 
-  const getRedirectUrl = () => {
-    // Dynamically detect the current URL to work perfectly in Codespaces, local dev, and production
-    if (typeof window !== 'undefined') {
-      return `\({window.location.origin}/auth/callback`;
-    }
-    // Fallback for edge cases
-    return import.meta.env.PROD
-      ? 'https://g4m3.netlify.app/auth/callback' 
-      : 'http://localhost:5173/auth/callback';
-  };
+  // Found the getRedirectUrl function in AppContext.tsx and replaced it with this:
+const getRedirectUrl = () => {
+  if (typeof window !== 'undefined') {
+    // This dynamically captures your exact Codespace URL including the -5173 port
+    const origin = window.location.origin;
+    return `${origin}/auth/callback`;
+  }
+  return 'https://redesigned-disco-r4qjwwp7wrijj2wq44-5173.app.github.dev/auth/callback';
+};
 
   const signInWithDiscord = useCallback(async () => {
     try {

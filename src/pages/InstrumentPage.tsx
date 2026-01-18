@@ -1,4 +1,4 @@
-// src/pages/InstrumentPage.tsx
+// src/pages/InstrumentPage.tsx - [REPLACE ENTIRE FILE]
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { Canvas } from '@react-three/fiber';
 import type { ThreeEvent } from '@react-three/fiber';
@@ -14,7 +14,7 @@ import { Ribbon } from '../components/Ribbon';
 
 const MAX_BANDS = 36;
 const MAX_ROWS = 36;
-const RITUAL_DURATION_SEC = 36; // controls when ribbon appears (last 36s of track)
+const RITUAL_DURATION_SEC = 36; 
 
 const InstrumentScene: React.FC<{
   activeRows: number[];
@@ -23,7 +23,6 @@ const InstrumentScene: React.FC<{
 }> = ({ activeRows, handleInteraction, showRibbon }) => {
   return (
     <group>
-      {/* Invisible hit plane for pointer/touch input */}
       <mesh
         position={[0, 0, 0.1]}
         visible={false}
@@ -38,7 +37,6 @@ const InstrumentScene: React.FC<{
         <meshBasicMaterial color="red" wireframe />
       </mesh>
 
-      {/* Columns */}
       {BAND_COLORS.map((color, index) => (
         <BandColumn
           key={index}
@@ -50,7 +48,6 @@ const InstrumentScene: React.FC<{
         />
       ))}
 
-      {/* Ribbon appears only when showRibbon === true */}
       <Ribbon
         finalEQState={activeRows}
         maxBands={MAX_BANDS}
@@ -74,16 +71,14 @@ const InstrumentPage: React.FC = () => {
 
   const requestRef = useRef<number | null>(null);
   const startTimeRef = useRef<number>(0);
-  const completedRef = useRef(false); // prevent double-complete
+  const completedRef = useRef(false);
 
-  // Kick back to landing if no file/buffer
   useEffect(() => {
     if (!state.file && !state.audioBuffer) {
       navigate('/');
     }
   }, [state.file, state.audioBuffer, navigate]);
 
-  // Decode the uploaded file into an AudioBuffer (if needed)
   useEffect(() => {
     const decodeAudio = async () => {
       if (state.file && !state.audioBuffer && !isDecoding) {
@@ -108,16 +103,9 @@ const InstrumentPage: React.FC = () => {
   const handleInteraction = useCallback(
     (uv: THREE.Vector2) => {
       if (!isPlaying) return;
-
       const bandIndex = Math.floor(uv.x * MAX_BANDS);
       const rowIndex = Math.floor(uv.y * MAX_ROWS);
-
-      if (
-        bandIndex >= 0 &&
-        bandIndex < MAX_BANDS &&
-        rowIndex >= 0 &&
-        rowIndex < MAX_ROWS
-      ) {
+      if (bandIndex >= 0 && bandIndex < MAX_BANDS && rowIndex >= 0 && rowIndex < MAX_ROWS) {
         setActiveRows(prev => {
           const newRows = [...prev];
           newRows[bandIndex] = rowIndex;
@@ -129,19 +117,13 @@ const InstrumentPage: React.FC = () => {
     [isPlaying]
   );
 
-  // ONE place that finalizes the ritual.
   const handleRitualComplete = useCallback(() => {
     if (completedRef.current) return;
     completedRef.current = true;
 
     if (requestRef.current) cancelAnimationFrame(requestRef.current);
 
-    trackEvent('ritual_complete', {
-      durationPlayed: (Date.now() - startTimeRef.current) / 1000,
-      bandsInteracted: activeRows.filter(r => r > -1).length,
-    });
-
-    // Capture the canvas as the Sound Print image
+    // Capture the canvas BEFORE navigating
     const canvas = document.querySelector('canvas') as HTMLCanvasElement | null;
     if (canvas) {
       const dataUrl = canvas.toDataURL('image/png');
@@ -153,48 +135,40 @@ const InstrumentPage: React.FC = () => {
       saveRecording(blob, activeRows);
     }
 
-    // Go straight to result/login gate
+    trackEvent('ritual_complete', {
+      durationPlayed: (Date.now() - startTimeRef.current) / 1000,
+    });
+
     navigate('/result');
   }, [activeRows, captureSoundPrint, saveRecording, navigate, trackEvent]);
 
-  // Keeps timer + ribbon in sync with the audio buffer
   const updateLoop = useCallback(() => {
     if (!startTimeRef.current) return;
-
     const elapsed = (Date.now() - startTimeRef.current) / 1000;
     const duration = state.audioBuffer?.duration || 0;
     const remaining = Math.max(0, duration - elapsed);
-
     setTimeLeft(remaining);
 
-    // This is your original behavior: show ribbon in last 36s of the track
     if (remaining <= RITUAL_DURATION_SEC && !showRibbon) {
       setShowRibbon(true);
     }
-
-    // Keep looping while audio is playing; onended will call handleRitualComplete
     requestRef.current = requestAnimationFrame(updateLoop);
   }, [state.audioBuffer, showRibbon]);
 
   const startRitual = async () => {
     if (isPlaying || !state.audioBuffer) return;
-
     try {
       completedRef.current = false;
       await audioEngine.init();
-      trackEvent('ritual_start');
-
       audioEngine.startPlayback(state.audioBuffer, () => {
-        // Audio finished; finalize ritual
         handleRitualComplete();
       });
-
       setIsPlaying(true);
       startTimeRef.current = Date.now();
       requestRef.current = requestAnimationFrame(updateLoop);
+      trackEvent('ritual_start');
     } catch (e) {
       console.error('Failed to start ritual:', e);
-      trackEvent('ritual_error', { error: String(e) });
     }
   };
 
@@ -206,26 +180,11 @@ const InstrumentPage: React.FC = () => {
   }, []);
 
   return (
-    <div
-      style={{
-        width: '100vw',
-        height: '100vh',
-        background: '#050810',
-        position: 'relative',
-        overflow: 'hidden',
-      }}
-    >
-      {/* 3D instrument */}
-      <div
-        style={{
-          width: '100%',
-          height: '100%',
-          opacity: isPlaying ? 1 : 0,
-          transition: 'opacity 1s ease-in',
-        }}
-      >
+    <div style={{ width: '100vw', height: '100vh', background: '#050810', position: 'relative', overflow: 'hidden' }}>
+      <div style={{ width: '100%', height: '100%', opacity: isPlaying ? 1 : 0, transition: 'opacity 1s ease-in' }}>
         <Canvas
           dpr={[1, 2]}
+          gl={{ preserveDrawingBuffer: true }} // CRITICAL FIX: Allows us to capture the image
           camera={{ position: [0, 0, 1.4], fov: 60 }}
           style={{ touchAction: 'none' }}
         >
@@ -240,75 +199,16 @@ const InstrumentPage: React.FC = () => {
         </Canvas>
       </div>
 
-      {/* Launch overlay */}
       {!isPlaying && (
-        <div
-          style={{
-            position: 'absolute',
-            inset: 0,
-            backgroundImage: "url('/ritual-launch-bg.jpg')",
-            backgroundSize: 'cover',
-            backgroundPosition: 'center',
-            zIndex: 50,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-        >
-          <button
-            onClick={startRitual}
-            disabled={!state.audioBuffer}
-            aria-label="Start Ritual"
-            style={{
-              width: '28vmin',
-              height: '28vmin',
-              borderRadius: '50%',
-              backgroundColor: 'transparent',
-              border: 'none',
-              cursor: !state.audioBuffer ? 'wait' : 'pointer',
-              boxShadow: !state.audioBuffer
-                ? 'none'
-                : '0 0 50px rgba(0, 255, 102, 0.4), inset 0 0 20px rgba(0, 255, 102, 0.2)',
-              animation: !state.audioBuffer ? 'none' : 'pulse 3s infinite ease-in-out',
-              transition: 'all 0.3s ease',
-            }}
-          />
-          {!state.audioBuffer && (
-            <div
-              style={{
-                position: 'absolute',
-                color: 'rgba(0, 255, 102, 0.6)',
-                fontFamily: 'monospace',
-                fontSize: '12px',
-                letterSpacing: '2px',
-                pointerEvents: 'none',
-              }}
-            >
-              INITIALIZING...
-            </div>
-          )}
-          <style>{`
-            @keyframes pulse {
-              0% { transform: scale(1); box-shadow: 0 0 50px rgba(0, 255, 102, 0.4); }
-              50% { transform: scale(1.02); box-shadow: 0 0 80px rgba(0, 255, 102, 0.7); }
-              100% { transform: scale(1); box-shadow: 0 0 50px rgba(0, 255, 102, 0.4); }
-            }
-          `}</style>
+        <div style={{ position: 'absolute', inset: 0, backgroundImage: "url('/ritual-launch-bg.jpg')", backgroundSize: 'cover', backgroundPosition: 'center', zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <button onClick={startRitual} disabled={!state.audioBuffer} style={{ width: '28vmin', height: '28vmin', borderRadius: '50%', backgroundColor: 'transparent', border: 'none', cursor: !state.audioBuffer ? 'wait' : 'pointer', boxShadow: !state.audioBuffer ? 'none' : '0 0 50px rgba(0, 255, 102, 0.4)', animation: !state.audioBuffer ? 'none' : 'pulse 3s infinite ease-in-out' }} />
+          {!state.audioBuffer && <div style={{ position: 'absolute', color: 'rgba(0, 255, 102, 0.6)', fontFamily: 'monospace', fontSize: '12px', letterSpacing: '2px' }}>INITIALIZING...</div>}
+          <style>{`@keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.02); } 100% { transform: scale(1); } }`}</style>
         </div>
       )}
 
-      {/* Countdown */}
       {isPlaying && (
-        <div
-          style={{
-            position: 'absolute',
-            bottom: '20px',
-            right: '20px',
-            fontFamily: 'monospace',
-            color: timeLeft <= RITUAL_DURATION_SEC ? '#FF003C' : '#555',
-            pointerEvents: 'none',
-          }}
-        >
+        <div style={{ position: 'absolute', bottom: '20px', right: '20px', fontFamily: 'monospace', color: timeLeft <= RITUAL_DURATION_SEC ? '#FF003C' : '#555' }}>
           {timeLeft.toFixed(1)}s
         </div>
       )}
