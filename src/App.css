@@ -13,36 +13,3 @@ html,
   overflow: hidden; /* Prevent scrollbars on the ritual interface */
   background-color: #000;
 }
-
-.app-container {
-  width: 100%;
-  height: 100vh;
-  /* Using the background image you specified */
-  background-image: url('/ritual-bg-v2.jpg');
-  background-size: cover;
-  background-position: center;
-  background-repeat: no-repeat;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-family: 'Courier New', Courier, monospace;
-  position: relative;
-}
-
-/* Optional: Add a dark overlay so text is readable over the busy background */
-.app-container::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.4);
-  z-index: 0;
-}
-
-/* Ensure content sits above the overlay */
-.app-container > div {
-  position: relative;
-  z-index: 1;
-}

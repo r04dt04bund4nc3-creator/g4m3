@@ -1,57 +1,59 @@
-/* Full screen container - dark background behind the machine */
-.res-container {
-  width: 100vw;
-  height: 100dvh;
-  background-color: #050810;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-  margin: 0;
-  padding: 0;
+/* ===== RESET: Nuke all global CSS for this page only ===== */
+.res-root-override, .res-root-override * {
+  all: unset;
+  box-sizing: border-box;
 }
 
-/* The Machine Wrapper - Maintains Aspect Ratio */
-.res-machine-wrapper {
+.res-root-override {
+  display: flex;
+  width: 100vw;
+  height: 100dvh;
+  background-color: #000;
+  justify-content: center;
+  align-items: center;
+  overflow: hidden;
+  padding: 0;
+  margin: 0;
+}
+
+/* ===== MACHINE CONTAINER ===== */
+.res-machine-container {
   position: relative;
   width: 100%;
   max-width: 1400px;
   aspect-ratio: 1365 / 768;
-  /* Ensure it doesn't get cut off on mobile */
-  max-height: 100dvh; 
+  max-height: 100dvh;
 }
 
-/* The Background Image */
-.res-skin {
+/* ===== BACKGROUND IMAGE ===== */
+.res-background-image {
   width: 100%;
   height: 100%;
-  object-fit: contain;
   display: block;
   pointer-events: none; /* Let clicks pass through to buttons */
 }
 
-/* 1. Header Text (Email) */
-.res-header-text {
+/* ===== DYNAMIC EMAIL TEXT ===== */
+.res-email-overlay {
   position: absolute;
-  top: 14%;
+  top: 14.5%;
   left: 0;
   width: 100%;
   text-align: center;
-  color: #4ade80; /* Neon green matching the machine */
+  color: #4ade80;
   font-family: monospace;
   font-size: clamp(12px, 1.5vw, 18px);
   text-shadow: 0 0 8px rgba(74, 222, 128, 0.6);
   pointer-events: none;
 }
 
-/* 2. The Screen Box */
-.res-screen-box {
+/* ===== SOUND PRINT SCREEN AREA ===== */
+.res-visualizer-screen {
   position: absolute;
   top: 24%;
   left: 31.2%;
   width: 37.6%;
   height: 45%;
-  /* Flex centers the wave image inside the TV */
   display: flex;
   align-items: center;
   justify-content: center;
@@ -59,16 +61,46 @@
   z-index: 5;
 }
 
-.res-wave-img {
+.res-print-internal {
   width: 95%;
   height: 90%;
   object-fit: contain;
-  /* Optional: add a glow to the wave itself */
   filter: drop-shadow(0 0 5px rgba(255, 0, 255, 0.4));
 }
 
-/* 3. The Hotspots (Invisible Buttons) */
-.res-controls-layer {
+/* ===== AUTH FORM POSITIONER (Logged Out) ===== */
+.res-auth-box-position {
+  position: absolute;
+  top: 55%;
+  left: 35%;
+  width: 30%;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  z-index: 20;
+}
+
+/* Force AuthForm inputs to be visible */
+.res-auth-box-position input {
+  background: rgba(0, 0, 0, 0.6) !important;
+  border: 1px solid #555 !important;
+  color: white !important;
+  padding: 8px;
+  font-family: monospace;
+}
+
+.res-auth-box-position button {
+  opacity: 0.9;
+  margin-bottom: 5px;
+  padding: 8px;
+  background: transparent;
+  border: 1px solid #4ade80;
+  color: #4ade80;
+  cursor: pointer;
+}
+
+/* ===== HOTSPOTS (Invisible Buttons) ===== */
+.res-interactive-layer {
   position: absolute;
   top: 0;
   left: 0;
@@ -77,19 +109,19 @@
   z-index: 10;
 }
 
-.hotspot {
+.hs {
   position: absolute;
-  background: transparent; /* Invisible */
+  background: transparent;
   border: none;
   cursor: pointer;
   padding: 0;
+  display: block;
 }
 
-/* DEBUG MODE: Uncomment this to see the clickable zones */
-/* .hotspot { background: rgba(255, 0, 0, 0.3); border: 1px solid red; } */
+/* DEBUG MODE: Uncomment to see hotspots */
+/* .hs { background: rgba(255, 0, 0, 0.3); } */
 
-/* === LOGGED IN COORDINATES === */
-/* Green Download Button */
+/* === LOGGED-IN HOTSPOT COORDINATES === */
 .hs-download { 
   left: 18.5%; 
   top: 70.8%; 
@@ -97,7 +129,6 @@
   height: 8.5%; 
 }
 
-/* Blue Save Button */
 .hs-save { 
   left: 51.5%; 
   top: 70.8%; 
@@ -105,41 +136,38 @@
   height: 8.5%; 
 }
 
-/* Bottom Row */
-.hs-replay { left: 18.8%; top: 83.5%; width: 19%; height: 6.5%; }
-.hs-home   { left: 40.2%; top: 83.5%; width: 19%; height: 6.5%; }
-.hs-signout{ left: 61.8%; top: 83.5%; width: 19%; height: 6.5%; }
-
-
-/* === LOGGED OUT COORDINATES === */
-
-/* Auth Form Positioner */
-/* This sits over the wood panel in the logged-out image */
-.res-auth-positioner {
-  position: absolute;
-  left: 35%;
-  top: 59%; 
-  width: 30%;
-  /* We rely on the AuthForm's internal layout, 
-     but we constrain it here */
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+.hs-replay { 
+  left: 18.8%; 
+  top: 83.5%; 
+  width: 19%; 
+  height: 6.5%; 
 }
 
-/* IMPORTANT: Override AuthForm defaults to make it blend in */
-.res-auth-positioner button {
-  /* This targets buttons inside your AuthForm component */
-  opacity: 0.9; /* Slight transparency to show texture? */
-  margin-bottom: 5px;
+.hs-home { 
+  left: 40.2%; 
+  top: 83.5%; 
+  width: 19%; 
+  height: 6.5%; 
 }
 
-.res-auth-positioner input {
-  background: rgba(0, 0, 0, 0.6) !important;
-  border: 1px solid #555 !important;
-  color: white !important;
+.hs-signout { 
+  left: 61.8%; 
+  top: 83.5%; 
+  width: 19%; 
+  height: 6.5%; 
 }
 
-/* Bottom Replay/Home for Logged Out */
-.hs-replay-lo { left: 52.8%; top: 89.5%; width: 20%; height: 6%; }
-.hs-home-lo   { left: 74.0%; top: 89.5%; width: 20%; height: 6%; }
+/* === LOGGED-OUT HOTSPOT COORDINATES === */
+.hs-replay-lo { 
+  left: 52.8%; 
+  top: 89.5%; 
+  width: 20%; 
+  height: 6%; 
+}
+
+.hs-home-lo { 
+  left: 74.0%; 
+  top: 89.5%; 
+  width: 20%; 
+  height: 6%; 
+}

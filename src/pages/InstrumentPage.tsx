@@ -63,7 +63,7 @@ const InstrumentPage: React.FC = () => {
   const { trackEvent } = useAnalytics();
 
   const [isPlaying, setIsPlaying] = useState(false);
-  const [isIntroPlaying, setIsIntroPlaying] = useState(false); // NEW: Video state
+  const [isIntroPlaying, setIsIntroPlaying] = useState(false); 
   const [activeRows, setActiveRows] = useState<number[]>(new Array(MAX_BANDS).fill(-1));
   const [showRibbon, setShowRibbon] = useState(false);
   const [timeLeft, setTimeLeft] = useState(0);
@@ -154,7 +154,6 @@ const InstrumentPage: React.FC = () => {
     requestRef.current = requestAnimationFrame(updateLoop);
   }, [state.audioBuffer, showRibbon]);
 
-  // Triggered after the video ends
   const beginActualPlayback = async () => {
     if (!state.audioBuffer) return;
     try {
@@ -172,7 +171,6 @@ const InstrumentPage: React.FC = () => {
     }
   };
 
-  // Called when the user taps the center play button
   const handleLaunchClick = () => {
     if (isPlaying || isIntroPlaying || !state.audioBuffer) return;
     setIsIntroPlaying(true);
@@ -194,7 +192,9 @@ const InstrumentPage: React.FC = () => {
         <video
           src="/intro-dissolve.mp4"
           autoPlay
+          muted        /* CRITICAL: Allows instant autoplay without flicker */
           playsInline
+          preload="auto" /* CRITICAL: Pre-buffers the video */
           onEnded={() => {
             setIsIntroPlaying(false);
             beginActualPlayback();
@@ -206,7 +206,7 @@ const InstrumentPage: React.FC = () => {
             height: '100%',
             objectFit: 'cover',
             zIndex: 100,
-            background: '#050810'
+            background: '#050810' /* Match background to hide loading gaps */
           }}
         />
       )}
@@ -216,7 +216,7 @@ const InstrumentPage: React.FC = () => {
         width: '100%', 
         height: '100%', 
         opacity: isPlaying ? 1 : 0, 
-        transition: 'opacity 1.5s ease-in' // Smooth fade in after intro
+        transition: 'opacity 1.5s ease-in' 
       }}>
         <Canvas
           dpr={[1, 2]}
