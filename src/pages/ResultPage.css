@@ -13,16 +13,16 @@
 
 .res-machine-container {
   position: relative;
-  width: min(100vw, calc(100vh * (16 / 9)));
-  height: min(100vh, calc(100vw * (9 / 16)));
-  aspect-ratio: 16 / 9;
+  width: min(100vw, calc(100vh * (1365 / 768)));
+  height: min(100vh, calc(100vw * (768 / 1365)));
+  aspect-ratio: 1365 / 768;
 }
 
 .res-background-image {
   width: 100%;
   height: 100%;
   display: block;
-  object-fit: fill; 
+  object-fit: contain;
   pointer-events: none;
 }
 
@@ -39,33 +39,30 @@
   text-transform: uppercase;
 }
 
-/* REFINED: Precise Sound Print Window coordinates */
+/* HARDWARE SCREEN AREA (Center Circle) */
 .res-visualizer-screen {
   position: absolute;
-  top: 24.5%;    
-  left: 31.5%;   
-  width: 37.0%;  
+  top: 23%;    
+  left: 31.2%;   
+  width: 37.6%;  
   height: 45.0%; 
   display: flex;
   align-items: center;
   justify-content: center;
   overflow: hidden;
   z-index: 5;
+  background: black; /* Standard screen background */
 }
 
 .res-print-internal {
-  width: 100%;
-  height: 100%;
+  max-width: 90%;
+  max-height: 85%;
   object-fit: contain;
-  display: block;
 }
 
 .res-interactive-layer {
   position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
+  inset: 0;
   z-index: 30;
 }
 
@@ -74,7 +71,6 @@
   background: transparent !important;
   border: none !important;
   cursor: pointer;
-  padding: 0;
 }
 
 .hs-input {
@@ -85,20 +81,19 @@
   color: #fff;
   font-family: monospace;
   font-size: 1.1vw;
-  padding: 0 10px;
 }
 
-/* LOGGED OUT */
-.hs-google        { top: 61.2%; left: 41.5%; width: 17.0%; height: 4.2%; }
-.hs-discord       { top: 66.5%; left: 41.5%; width: 17.0%; height: 4.2%; }
-.hs-input-email   { top: 73.5%; left: 40.5%; width: 19.0%; height: 4.8%; }
-.hs-input-pass    { top: 79.2%; left: 40.5%; width: 19.0%; height: 4.8%; }
-.hs-email-signin  { top: 89.5%; left: 29.2%; width: 20.0%; height: 8.0%; }
-.hs-replay-lo     { top: 89.5%; left: 51.5%; width: 20.0%; height: 8.0%; }
+/* LOGGED OUT COORDINATES */
+.hs-google        { top: 66.5%; left: 41.4%; width: 17.2%; height: 4.5%; }
+.hs-discord       { top: 71.8%; left: 41.4%; width: 17.2%; height: 4.5%; }
+.hs-input-email   { top: 78.5%; left: 40.3%; width: 19.5%; height: 4.5%; }
+.hs-input-pass    { top: 84.0%; left: 40.3%; width: 19.5%; height: 4.5%; }
+.hs-email-signin  { top: 89.5%; left: 29.2%; width: 21.0%; height: 7.5%; }
+.hs-replay-lo     { top: 89.5%; left: 51.5%; width: 21.0%; height: 7.5%; }
 
-/* LOGGED IN */
-.hs-download      { top: 71.2%; left: 18.5%; width: 30.0%; height: 8.5%; }
-.hs-save          { top: 71.2%; left: 51.5%; width: 30.0%; height: 8.5%; }
-.hs-replay-li     { top: 84.2%; left: 19.2%; width: 18.5%; height: 6.5%; }
-.hs-home-li       { top: 84.2%; left: 40.8%; width: 18.5%; height: 6.5%; }
-.hs-signout-li    { top: 84.2%; left: 62.2%; width: 18.5%; height: 6.5%; }
+/* LOGGED IN COORDINATES */
+.hs-download      { top: 71.5%; left: 18.5%; width: 30.5%; height: 8.8%; }
+.hs-save          { top: 71.5%; left: 51.0%; width: 30.5%; height: 8.8%; }
+.hs-replay-li     { top: 84.0%; left: 19.0%; width: 19.0%; height: 6.5%; }
+.hs-home-li       { top: 84.0%; left: 40.5%; width: 19.0%; height: 6.5%; }
+.hs-signout-li    { top: 84.0%; left: 62.0%; width: 19.0%; height: 6.5%; }
