@@ -11,7 +11,6 @@
   z-index: 9999;
 }
 
-/* Forces the container to always stay 16:9 and fit inside the window */
 .res-machine-container {
   position: relative;
   width: min(100vw, calc(100vh * (16 / 9)));
@@ -19,7 +18,6 @@
   aspect-ratio: 16 / 9;
 }
 
-/* Force image to stretch/shrink to fit the 16:9 container exactly */
 .res-background-image {
   width: 100%;
   height: 100%;
@@ -36,18 +34,18 @@
   text-align: center;
   color: #4ade80;
   font-family: monospace;
-  font-size: 1.2vw;
+  font-size: 1.1vw;
   pointer-events: none;
   text-transform: uppercase;
 }
 
-/* REFINED: Sound Print Window coordinates */
+/* REFINED: Precise Sound Print Window coordinates */
 .res-visualizer-screen {
   position: absolute;
-  top: 18.5%;    /* Higher up than before */
-  left: 35.5%;   /* More centered horizontally */
-  width: 29.0%;  /* Much narrower to fit the circle */
-  height: 41.5%; /* Taller to fill the vertical space */
+  top: 24.5%;    
+  left: 31.5%;   
+  width: 37.0%;  
+  height: 45.0%; 
   display: flex;
   align-items: center;
   justify-content: center;
@@ -90,7 +88,7 @@
   padding: 0 10px;
 }
 
-/* --- RECALIBRATED LOGGED OUT COORDINATES --- */
+/* LOGGED OUT */
 .hs-google        { top: 61.2%; left: 41.5%; width: 17.0%; height: 4.2%; }
 .hs-discord       { top: 66.5%; left: 41.5%; width: 17.0%; height: 4.2%; }
 .hs-input-email   { top: 73.5%; left: 40.5%; width: 19.0%; height: 4.8%; }
@@ -98,13 +96,9 @@
 .hs-email-signin  { top: 89.5%; left: 29.2%; width: 20.0%; height: 8.0%; }
 .hs-replay-lo     { top: 89.5%; left: 51.5%; width: 20.0%; height: 8.0%; }
 
-/* --- RECALIBRATED LOGGED IN COORDINATES --- */
-.hs-download      { top: 71.2%; left: 18.2%; width: 30.5%; height: 9.0%; }
-.hs-save          { top: 71.2%; left: 52.0%; width: 30.5%; height: 9.0%; }
+/* LOGGED IN */
+.hs-download      { top: 71.2%; left: 18.5%; width: 30.0%; height: 8.5%; }
+.hs-save          { top: 71.2%; left: 51.5%; width: 30.0%; height: 8.5%; }
 .hs-replay-li     { top: 84.2%; left: 19.2%; width: 18.5%; height: 6.5%; }
 .hs-home-li       { top: 84.2%; left: 40.8%; width: 18.5%; height: 6.5%; }
 .hs-signout-li    { top: 84.2%; left: 62.2%; width: 18.5%; height: 6.5%; }
-
-/* DEBUG MODE: Uncomment to see where targets are if needed */
-/* .hs { background: rgba(255, 0, 0, 0.3) !important; } */
-/* .hs-input { background: rgba(0, 255, 0, 0.3) !important; } */

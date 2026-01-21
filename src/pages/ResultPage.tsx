@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../state/AppContext';
 import { useAnalytics } from '../hooks/useAnalytics';
@@ -16,10 +16,45 @@ const ResultPage: React.FC = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
 
+  // Local "Recovery" state for OAuth redirects
+  const [recoveredPrint, setRecoveredPrint] = useState<string | null>(null);
+  const [recoveredBlob, setRecoveredBlob] = useState<Blob | null>(null);
+
+  // 1. PERSISTENCE LOGIC: Save state before OAuth redirect
+  const persistStateForAuth = async () => {
+    if (ritual.soundPrintDataUrl) {
+      sessionStorage.setItem('res_recovery_print', ritual.soundPrintDataUrl);
+    }
+    if (state.recordingBlob) {
+      // Convert blob to base64 for session storage (temporary fix for redirect)
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const base64data = reader.result as string;
+        sessionStorage.setItem('res_recovery_blob', base64data);
+      };
+      reader.readAsDataURL(state.recordingBlob);
+    }
+  };
+
+  // 2. RECOVERY LOGIC: Load state after redirect
+  useEffect(() => {
+    const savedPrint = sessionStorage.getItem('res_recovery_print');
+    const savedBlobUri = sessionStorage.getItem('res_recovery_blob');
+
+    if (savedPrint) setRecoveredPrint(savedPrint);
+    
+    if (savedBlobUri) {
+      fetch(savedBlobUri)
+        .then(res => res.blob())
+        .then(blob => setRecoveredBlob(blob));
+    }
+  }, []);
+
   const getRedirectUrl = () => window.location.origin + '/auth/callback';
 
   const handleSocialLogin = async (provider: 'google' | 'discord') => {
     trackEvent('social_login_attempt', { provider });
+    await persistStateForAuth(); // Save before we leave the page
     await supabase.auth.signInWithOAuth({
       provider,
       options: { redirectTo: getRedirectUrl() },
@@ -40,17 +75,22 @@ const ResultPage: React.FC = () => {
   };
 
   const downloadAudio = useCallback(() => {
-    if (!auth.user || !state.recordingBlob) return;
+    const activeBlob = state.recordingBlob || recoveredBlob;
+    if (!auth.user || !activeBlob) {
+      alert("No audio data found. Please try the ritual again.");
+      return;
+    }
+    
     trackEvent('download_audio', { fileName: state.file?.name });
-    const url = URL.createObjectURL(state.recordingBlob);
+    const url = URL.createObjectURL(activeBlob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${state.file?.name.replace(/\.[^/.]+$/, "") || 'performance'}-sound-print.webm`;
+    a.download = `${state.file?.name?.replace(/\.[^/.]+$/, "") || 'performance'}-sound-print.webm`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-  }, [state.recordingBlob, state.file, auth.user, trackEvent]);
+  }, [state.recordingBlob, recoveredBlob, state.file, auth.user, trackEvent]);
 
   const handleSave = async () => {
     if (!auth.user) return;
@@ -62,17 +102,19 @@ const ResultPage: React.FC = () => {
   };
 
   const replay = () => {
-    trackEvent('ritual_replay');
+    sessionStorage.clear(); // Clear recovery on intentional exit
     reset(); 
     navigate('/instrument'); 
   };
 
   const goHome = () => { 
+    sessionStorage.clear();
     reset(); 
     navigate('/'); 
   };
 
   const isLoggedIn = !!auth.user?.id;
+  const currentPrint = ritual.soundPrintDataUrl || recoveredPrint;
 
   return (
     <div className="res-page-root">
@@ -85,13 +127,13 @@ const ResultPage: React.FC = () => {
         />
 
         <div className="res-email-overlay">
-          {auth.isLoading ? "SYNCING..." : isLoggedIn ? `Logged in: ${auth.user?.email}` : ""}
+          {auth.isLoading ? "SYNCING..." : isLoggedIn ? `LOGGED IN: ${auth.user?.email}` : ""}
         </div>
 
         <div className="res-visualizer-screen">
-          {ritual.soundPrintDataUrl && (
+          {currentPrint && (
             <img 
-              src={ritual.soundPrintDataUrl} 
+              src={currentPrint} 
               className="res-print-internal"
               alt="Sound Print" 
             />
