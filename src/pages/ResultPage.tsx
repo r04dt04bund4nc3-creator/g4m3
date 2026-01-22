@@ -9,7 +9,7 @@ import loggedInSkin from '../assets/result-logged-in.webp';
 import './ResultPage.css';
 
 /** -------- IndexedDB helpers (for big video blobs across OAuth redirects) -------- */
-const DB_NAME = 'G4M3_DB';
+const DB_NAME = 'G4BKU5_DB';
 const STORE_NAME = 'blobs';
 const DB_VERSION = 1;
 
@@ -66,6 +66,38 @@ async function deleteBlob(key: string): Promise<void> {
 const RECOVERY_BLOB_KEY = 'res_recovery_blob';
 const RECOVERY_PRINT_KEY = 'res_recovery_print';
 
+/** -------- Filename helpers -------- */
+
+function sanitizeBaseName(name: string): string {
+  // remove extension and anything weird for file systems
+  return name
+    .replace(/\.[^/.]+$/, '') // strip extension
+    .replace(/[^a-z0-9]+/gi, '_') // only letters, numbers, underscores
+    .replace(/^_+|_+$/g, ''); // trim underscores
+}
+
+function buildSessionFileName(file?: File | null): string {
+  const prefix = '4B4KU5-';
+
+  if (file?.name) {
+    const base = sanitizeBaseName(file.name) || 'session';
+    return `${prefix}${base}.webm`;
+  }
+
+  // Fallback: custom short timestamp, e.g. 260122154 for 2026‑01‑22 15:04
+  const now = new Date();
+  const yy = String(now.getFullYear()).slice(-2);           // 26
+  const mm = String(now.getMonth() + 1).padStart(2, '0');   // 01..12
+  const dd = String(now.getDate()).padStart(2, '0');        // 01..31
+  const hh = String(now.getHours()).padStart(2, '0');       // 00..23
+  const min = String(now.getMinutes()).padStart(1, '0');    // 0..59 (no leading 0 if you want 154 vs 1504)
+
+  const stamp = `${yy}${mm}${dd}${hh}${min}`;               // -> "260122154"
+  return `${prefix}${stamp}.webm`;
+}
+
+/** -------- Component -------- */
+
 const ResultPage: React.FC = () => {
   const navigate = useNavigate();
   const { state, ritual, auth, savePerformance, signOut, reset } = useApp();
@@ -101,7 +133,7 @@ const ResultPage: React.FC = () => {
         sessionStorage.setItem(RECOVERY_PRINT_KEY, ritual.soundPrintDataUrl);
       }
 
-      // persist recorded session (now video/webm)
+      // persist recorded session (video/webm)
       if (state.recordingBlob) {
         try {
           await saveBlob(RECOVERY_BLOB_KEY, state.recordingBlob);
@@ -128,14 +160,17 @@ const ResultPage: React.FC = () => {
     const url = URL.createObjectURL(activeBlob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${state.file?.name?.replace(/\.[^/.]+$/, '') || 'ritual'}-session.webm`;
+
+    const fileName = buildSessionFileName(state.file || null);
+    a.download = fileName;
+
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
 
-    trackEvent('download_session', { type: activeBlob.type || 'video/webm' });
-  }, [auth.user, recoveredBlob, state.file?.name, state.recordingBlob, trackEvent]);
+    trackEvent('download_session', { type: activeBlob.type || 'video/webm', fileName });
+  }, [auth.user, recoveredBlob, state.file, state.recordingBlob, trackEvent]);
 
   const handleSave = useCallback(async () => {
     if (!auth.user) return;
@@ -150,11 +185,8 @@ const ResultPage: React.FC = () => {
 
   const replay = useCallback(() => {
     trackEvent('ritual_replay');
-
-    // optional cleanup
     sessionStorage.removeItem(RECOVERY_PRINT_KEY);
     deleteBlob(RECOVERY_BLOB_KEY).catch(() => {});
-
     reset();
     navigate('/instrument');
   }, [navigate, reset, trackEvent]);
@@ -162,14 +194,12 @@ const ResultPage: React.FC = () => {
   const goHome = useCallback(() => {
     sessionStorage.removeItem(RECOVERY_PRINT_KEY);
     deleteBlob(RECOVERY_BLOB_KEY).catch(() => {});
-
     reset();
     navigate('/');
   }, [navigate, reset]);
 
   const handleSignOut = useCallback(async () => {
     await signOut();
-    // keep recovery data; user might sign back in
   }, [signOut]);
 
   const isLoggedIn = !!auth.user?.id;
@@ -188,9 +218,11 @@ const ResultPage: React.FC = () => {
           {auth.isLoading ? 'SYNCING...' : isLoggedIn ? `LOGGED IN: ${auth.user?.email}` : ''}
         </div>
 
-        {/* Visualizer area (different placement for LO vs LI if needed) */}
+        {/* Visualizer area (different placement for LO vs LI) */}
         <div className={`res-visualizer-screen ${isLoggedIn ? 'vs-li' : 'vs-lo'}`}>
-          {currentPrint && <img src={currentPrint} className="res-print-internal" alt="Sound Print" />}
+          {currentPrint && (
+            <img src={currentPrint} className="res-print-internal" alt="Sound Print" />
+          )}
         </div>
 
         {/* Invisible hotspots */}
