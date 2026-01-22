@@ -1,11 +1,8 @@
 /* src/pages/ResultPage.css */
 
-/* Fullscreen page */
 .res-page-root {
   position: fixed;
   inset: 0;
-  width: 100vw;
-  height: 100dvh;
   background-color: #050810;
   display: flex;
   justify-content: center;
@@ -14,24 +11,22 @@
   z-index: 9999;
 }
 
-/* Machine always fills the viewport */
+/* FILL ANY WINDOW */
 .res-machine-container {
   position: relative;
-  width: 100%;
-  height: 100%;
-  overflow: hidden;
+  width: 100vw;
+  height: 100vh;
 }
 
-/* Background artwork stretches to cover window (may crop a little) */
+/* STRETCH TO FILL */
 .res-background-image {
   width: 100%;
   height: 100%;
   display: block;
-  object-fit: cover;      /* fills the screen */
+  object-fit: fill; 
   pointer-events: none;
 }
 
-/* Logged-in text */
 .res-email-overlay {
   position: absolute;
   top: 14.5%;
@@ -45,35 +40,28 @@
   text-transform: uppercase;
 }
 
-/* CENTRAL SCREEN AREA (hardware “monitor”) */
+/* REFINED: Precise Sound Print Window (shrunk to fit tighter) */
 .res-visualizer-screen {
   position: absolute;
-  /* narrower and shorter so we stay inside the hardware frame */
-  top: 24.5%;
-  left: 32%;
-  width: 36%;
-  height: 32%;
+  top: 25.0%;    
+  left: 33.5%;   
+  width: 33.0%;  
+  height: 40.0%; 
   display: flex;
   align-items: center;
   justify-content: center;
   overflow: hidden;
   z-index: 5;
-  /* important: container itself is transparent, so it doesn’t
-     paint a big black rectangle over the buttons */
   background: transparent;
 }
 
-/* The Sound Print image itself – shrinks to fit inside the frame */
 .res-print-internal {
   width: 100%;
   height: 100%;
-  max-width: 100%;
-  max-height: 100%;
   object-fit: contain;
   display: block;
 }
 
-/* Hotspot layer */
 .res-interactive-layer {
   position: absolute;
   inset: 0;
@@ -85,10 +73,8 @@
   background: transparent !important;
   border: none !important;
   cursor: pointer;
-  padding: 0;
 }
 
-/* Transparent “ghost” inputs */
 .hs-input {
   position: absolute;
   background: transparent !important;
@@ -97,11 +83,9 @@
   color: #fff;
   font-family: monospace;
   font-size: 1.1vw;
-  padding: 0 10px;
 }
 
-/* ---------- LOGGED OUT COORDINATES ---------- */
-
+/* LOGGED OUT */
 .hs-google        { top: 66.5%; left: 41.4%; width: 17.2%; height: 4.5%; }
 .hs-discord       { top: 71.8%; left: 41.4%; width: 17.2%; height: 4.5%; }
 .hs-input-email   { top: 78.5%; left: 40.3%; width: 19.5%; height: 4.5%; }
@@ -109,16 +93,9 @@
 .hs-email-signin  { top: 89.5%; left: 29.2%; width: 21.0%; height: 7.5%; }
 .hs-replay-lo     { top: 89.5%; left: 51.5%; width: 21.0%; height: 7.5%; }
 
-/* ---------- LOGGED IN COORDINATES ---------- */
-
+/* LOGGED IN */
 .hs-download      { top: 71.5%; left: 18.5%; width: 30.5%; height: 8.8%; }
 .hs-save          { top: 71.5%; left: 51.0%; width: 30.5%; height: 8.8%; }
 .hs-replay-li     { top: 84.0%; left: 19.0%; width: 19.0%; height: 6.5%; }
 .hs-home-li       { top: 84.0%; left: 40.5%; width: 19.0%; height: 6.5%; }
 .hs-signout-li    { top: 84.0%; left: 62.0%; width: 19.0%; height: 6.5%; }
-
-/* DEBUG: uncomment if you ever want to see the hit areas */
-/*
-.hs { background: rgba(255, 0, 0, 0.25) !important; }
-.hs-input { background: rgba(0, 255, 0, 0.25) !important; }
-*/

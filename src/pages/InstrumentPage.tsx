@@ -159,7 +159,12 @@ const InstrumentPage: React.FC = () => {
     try {
       completedRef.current = false;
       await audioEngine.init();
-      audioEngine.startPlayback(state.audioBuffer, () => {
+
+      // CAPTURE CANVAS STREAM FOR VIDEO RECORDING
+      const canvas = document.querySelector('canvas');
+      const videoStream = canvas ? (canvas as any).captureStream(30) : null;
+
+      audioEngine.startPlayback(state.audioBuffer, videoStream, () => {
         handleRitualComplete();
       });
       setIsPlaying(true);
@@ -187,14 +192,13 @@ const InstrumentPage: React.FC = () => {
   return (
     <div style={{ width: '100vw', height: '100dvh', background: '#050810', position: 'relative', overflow: 'hidden' }}>
       
-      {/* 1. INTRO VIDEO OVERLAY */}
       {isIntroPlaying && (
         <video
           src="/intro-dissolve.mp4"
           autoPlay
-          muted        /* CRITICAL: Allows instant autoplay without flicker */
+          muted
           playsInline
-          preload="auto" /* CRITICAL: Pre-buffers the video */
+          preload="auto"
           onEnded={() => {
             setIsIntroPlaying(false);
             beginActualPlayback();
@@ -206,12 +210,11 @@ const InstrumentPage: React.FC = () => {
             height: '100%',
             objectFit: 'cover',
             zIndex: 100,
-            background: '#050810' /* Match background to hide loading gaps */
+            background: '#050810'
           }}
         />
       )}
 
-      {/* 2. MAIN INSTRUMENT CANVAS */}
       <div style={{ 
         width: '100%', 
         height: '100%', 
@@ -235,7 +238,6 @@ const InstrumentPage: React.FC = () => {
         </Canvas>
       </div>
 
-      {/* 3. LAUNCH SCREEN */}
       {!isPlaying && !isIntroPlaying && (
         <div style={{ 
           position: 'absolute', 
@@ -277,7 +279,6 @@ const InstrumentPage: React.FC = () => {
         </div>
       )}
 
-      {/* 4. TIMER */}
       {isPlaying && (
         <div style={{ position: 'absolute', bottom: '20px', right: '20px', fontFamily: 'monospace', color: timeLeft <= RITUAL_DURATION_SEC ? '#FF003C' : '#555' }}>
           {timeLeft.toFixed(1)}s
