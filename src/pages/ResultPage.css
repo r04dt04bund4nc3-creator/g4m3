@@ -11,17 +11,19 @@
   z-index: 9999;
 }
 
+/* Fill the window */
 .res-machine-container {
   position: relative;
   width: 100vw;
   height: 100vh;
 }
 
+/* Keep the behavior that already works for your logged-in screen */
 .res-background-image {
   width: 100%;
   height: 100%;
   display: block;
-  object-fit: fill; 
+  object-fit: fill;
   pointer-events: none;
 }
 
@@ -38,7 +40,7 @@
   text-transform: uppercase;
 }
 
-/* BASE VISUALIZER SCREEN */
+/* Visualizer base */
 .res-visualizer-screen {
   position: absolute;
   display: flex;
@@ -49,22 +51,6 @@
   background: transparent;
 }
 
-/* COORDINATES FOR LOGGED IN (Download Page) - KEEP AS IS */
-.vs-li {
-  top: 25.0%;    
-  left: 33.5%;   
-  width: 33.0%;  
-  height: 40.0%; 
-}
-
-/* COORDINATES FOR LOGGED OUT (Login Page) - NEW PRECISE VALUES */
-.vs-lo {
-  top: 22.0%;    /* Slightly higher than before to fit inside the frame */
-  left: 35.5%;   /* Centered horizontally under the "YOUR SOUND PRINT" title */
-  width: 29.0%;  /* Narrower to fit the hardware circle */
-  height: 38.0%; /* Taller to fill the vertical space without covering buttons */
-}
-
 .res-print-internal {
   width: 100%;
   height: 100%;
@@ -72,6 +58,23 @@
   display: block;
 }
 
+/* Logged-in visualizer (keep: you said it’s perfect) */
+.vs-li {
+  top: 25.0%;
+  left: 33.5%;
+  width: 33.0%;
+  height: 40.0%;
+}
+
+/* Logged-out visualizer (tuned so it sits inside the monitor and stays off the buttons) */
+.vs-lo {
+  top: 22.0%;
+  left: 33.5%;
+  width: 33.0%;
+  height: 36.0%;
+}
+
+/* Hotspot layer */
 .res-interactive-layer {
   position: absolute;
   inset: 0;
@@ -83,41 +86,25 @@
   background: transparent !important;
   border: none !important;
   cursor: pointer;
+  padding: 0;
 }
 
-.hs-input {
-  position: absolute;
-  background: transparent !important;
-  border: none !important;
-  outline: none !important;
-  color: #fff;
-  font-family: monospace;
-  font-size: 1.1vw;
-}
+/* ---------------- LOGGED OUT (NEW ART: 3 buttons) ---------------- */
+/* Center stack: Google, Discord, Replay Ritual */
 
-/* --- RECALIBRATED LOGGED OUT TARGETS (MATCHES YOUR NEW IMAGE) --- */
+.hs-google  { top: 66.0%; left: 33.5%; width: 33.0%; height: 6.2%; }
+.hs-discord { top: 74.0%; left: 33.5%; width: 33.0%; height: 6.2%; }
+.hs-replay-lo { top: 82.0%; left: 33.5%; width: 33.0%; height: 7.5%; }
 
-/* Google Button */
-.hs-google        { top: 67.5%; left: 41.0%; width: 18.0%; height: 4.0%; }
+/* ---------------- LOGGED IN (UNCHANGED / WORKING) ---------------- */
 
-/* Discord Button */
-.hs-discord       { top: 72.5%; left: 41.0%; width: 18.0%; height: 4.0%; }
+.hs-download   { top: 71.5%; left: 18.5%; width: 30.5%; height: 8.8%; }
+.hs-save       { top: 71.5%; left: 51.0%; width: 30.5%; height: 8.8%; }
+.hs-replay-li  { top: 84.0%; left: 19.0%; width: 19.0%; height: 6.5%; }
+.hs-home-li    { top: 84.0%; left: 40.5%; width: 19.0%; height: 6.5%; }
+.hs-signout-li { top: 84.0%; left: 62.0%; width: 19.0%; height: 6.5%; }
 
-/* Email Input Field */
-.hs-input-email   { top: 78.0%; left: 40.0%; width: 20.0%; height: 4.0%; }
-
-/* Password Input Field */
-.hs-input-pass    { top: 83.0%; left: 40.0%; width: 20.0%; height: 4.0%; }
-
-/* "Sign In with Email" Button */
-.hs-email-signin  { top: 89.5%; left: 29.0%; width: 22.0%; height: 7.0%; }
-
-/* "Replay Ritual" Button */
-.hs-replay-lo     { top: 89.5%; left: 53.0%; width: 22.0%; height: 7.0%; }
-
-/* --- LOGGED IN TARGETS (Remains working) --- */
-.hs-download      { top: 71.5%; left: 18.5%; width: 30.5%; height: 8.8%; }
-.hs-save          { top: 71.5%; left: 51.0%; width: 30.5%; height: 8.8%; }
-.hs-replay-li     { top: 84.0%; left: 19.0%; width: 19.0%; height: 6.5%; }
-.hs-home-li       { top: 84.0%; left: 40.5%; width: 19.0%; height: 6.5%; }
-.hs-signout-li    { top: 84.0%; left: 62.0%; width: 19.0%; height: 6.5%; }
+/* Debug (optional): turn on to see hit areas */
+/*
+.hs { background: rgba(255, 0, 0, 0.25) !important; }
+*/

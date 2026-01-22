@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../state/AppContext';
 import { useAnalytics } from '../hooks/useAnalytics';
@@ -8,82 +8,169 @@ import loggedOutSkin from '../assets/result-logged-out.webp';
 import loggedInSkin from '../assets/result-logged-in.webp';
 import './ResultPage.css';
 
-// --- PERSISTENCE HELPERS (INDEXED DB) ---
+/** -------- IndexedDB helpers (for big video blobs across OAuth redirects) -------- */
 const DB_NAME = 'G4M3_DB';
 const STORE_NAME = 'blobs';
-const openDB = () => new Promise<IDBDatabase>((res, rej) => {
-  const req = indexedDB.open(DB_NAME, 1);
-  req.onupgradeneeded = () => req.result.createObjectStore(STORE_NAME);
-  req.onsuccess = () => res(req.result);
-  req.onerror = () => rej(req.error);
-});
-const saveBlob = async (key: string, blob: Blob) => {
+const DB_VERSION = 1;
+
+function openDB(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, DB_VERSION);
+
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains(STORE_NAME)) {
+        db.createObjectStore(STORE_NAME);
+      }
+    };
+
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function saveBlob(key: string, blob: Blob): Promise<void> {
   const db = await openDB();
-  return new Promise((res, rej) => {
+  await new Promise<void>((resolve, reject) => {
     const tx = db.transaction(STORE_NAME, 'readwrite');
     tx.objectStore(STORE_NAME).put(blob, key);
-    tx.oncomplete = () => res(true);
-    tx.onerror = () => rej(tx.error);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
   });
-};
-const loadBlob = async (key: string) => {
+  db.close();
+}
+
+async function loadBlob(key: string): Promise<Blob | null> {
   const db = await openDB();
-  return new Promise<Blob | null>((res, rej) => {
+  const blob = await new Promise<Blob | null>((resolve, reject) => {
     const tx = db.transaction(STORE_NAME, 'readonly');
     const req = tx.objectStore(STORE_NAME).get(key);
-    req.onsuccess = () => res(req.result);
-    req.onerror = () => rej(req.error);
+    req.onsuccess = () => resolve((req.result as Blob) ?? null);
+    req.onerror = () => reject(req.error);
   });
-};
+  db.close();
+  return blob;
+}
+
+async function deleteBlob(key: string): Promise<void> {
+  const db = await openDB();
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    tx.objectStore(STORE_NAME).delete(key);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+  db.close();
+}
+
+const RECOVERY_BLOB_KEY = 'res_recovery_blob';
+const RECOVERY_PRINT_KEY = 'res_recovery_print';
 
 const ResultPage: React.FC = () => {
   const navigate = useNavigate();
   const { state, ritual, auth, savePerformance, signOut, reset } = useApp();
   const { trackEvent } = useAnalytics();
 
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
   const [recoveredPrint, setRecoveredPrint] = useState<string | null>(null);
   const [recoveredBlob, setRecoveredBlob] = useState<Blob | null>(null);
 
+  // Recover after OAuth redirect (or refresh)
   useEffect(() => {
-    const recover = async () => {
-      const savedPrint = sessionStorage.getItem('res_recovery_print');
+    const run = async () => {
+      const savedPrint = sessionStorage.getItem(RECOVERY_PRINT_KEY);
       if (savedPrint) setRecoveredPrint(savedPrint);
-      const blob = await loadBlob('res_recovery_blob');
-      if (blob) setRecoveredBlob(blob);
+
+      try {
+        const blob = await loadBlob(RECOVERY_BLOB_KEY);
+        if (blob) setRecoveredBlob(blob);
+      } catch {
+        // ignore
+      }
     };
-    recover();
+    run();
   }, []);
 
-  const safePersistAndRedirect = async (provider: 'google' | 'discord') => {
-    trackEvent('social_login_attempt', { provider });
-    if (ritual.soundPrintDataUrl) sessionStorage.setItem('res_recovery_print', ritual.soundPrintDataUrl);
-    if (state.recordingBlob) await saveBlob('res_recovery_blob', state.recordingBlob);
-    
-    await supabase.auth.signInWithOAuth({
-      provider,
-      options: { redirectTo: window.location.origin + '/auth/callback' },
-    });
-  };
+  const getRedirectUrl = () => window.location.origin + '/auth/callback';
+
+  const safePersistAndRedirect = useCallback(
+    async (provider: 'google' | 'discord') => {
+      trackEvent('social_login_attempt', { provider });
+
+      // persist sound print
+      if (ritual.soundPrintDataUrl) {
+        sessionStorage.setItem(RECOVERY_PRINT_KEY, ritual.soundPrintDataUrl);
+      }
+
+      // persist recorded session (now video/webm)
+      if (state.recordingBlob) {
+        try {
+          await saveBlob(RECOVERY_BLOB_KEY, state.recordingBlob);
+        } catch (e) {
+          console.warn('IndexedDB save failed:', e);
+        }
+      }
+
+      await supabase.auth.signInWithOAuth({
+        provider,
+        options: { redirectTo: getRedirectUrl() },
+      });
+    },
+    [ritual.soundPrintDataUrl, state.recordingBlob, trackEvent]
+  );
 
   const downloadSession = useCallback(() => {
     const activeBlob = state.recordingBlob || recoveredBlob;
     if (!auth.user || !activeBlob) {
-      alert("No recording data found. Please try the ritual again.");
+      alert('No recording data found. Please try the ritual again.');
       return;
     }
+
     const url = URL.createObjectURL(activeBlob);
     const a = document.createElement('a');
     a.href = url;
-    // EXTENSION IS NOW WEBM (VIDEO)
-    const ext = activeBlob.type.includes('video') ? 'webm' : 'webm';
-    a.download = `${state.file?.name?.replace(/\.[^/.]+$/, "") || 'ritual'}-session.${ext}`;
+    a.download = `${state.file?.name?.replace(/\.[^/.]+$/, '') || 'ritual'}-session.webm`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-  }, [state.recordingBlob, recoveredBlob, auth.user, state.file?.name]);
+
+    trackEvent('download_session', { type: activeBlob.type || 'video/webm' });
+  }, [auth.user, recoveredBlob, state.file?.name, state.recordingBlob, trackEvent]);
+
+  const handleSave = useCallback(async () => {
+    if (!auth.user) return;
+
+    const trackName = state.file?.name || 'Unknown Track';
+    const trackHash = btoa(state.file?.name || '') + '-' + state.file?.size;
+
+    await savePerformance(ritual.finalEQState, trackName, trackHash);
+    trackEvent('save_performance', { userId: auth.user.id });
+    alert('Saved to library.');
+  }, [auth.user, ritual.finalEQState, savePerformance, state.file, trackEvent]);
+
+  const replay = useCallback(() => {
+    trackEvent('ritual_replay');
+
+    // optional cleanup
+    sessionStorage.removeItem(RECOVERY_PRINT_KEY);
+    deleteBlob(RECOVERY_BLOB_KEY).catch(() => {});
+
+    reset();
+    navigate('/instrument');
+  }, [navigate, reset, trackEvent]);
+
+  const goHome = useCallback(() => {
+    sessionStorage.removeItem(RECOVERY_PRINT_KEY);
+    deleteBlob(RECOVERY_BLOB_KEY).catch(() => {});
+
+    reset();
+    navigate('/');
+  }, [navigate, reset]);
+
+  const handleSignOut = useCallback(async () => {
+    await signOut();
+    // keep recovery data; user might sign back in
+  }, [signOut]);
 
   const isLoggedIn = !!auth.user?.id;
   const currentPrint = ritual.soundPrintDataUrl || recoveredPrint;
@@ -91,32 +178,36 @@ const ResultPage: React.FC = () => {
   return (
     <div className="res-page-root">
       <div className="res-machine-container">
-        <img src={isLoggedIn ? loggedInSkin : loggedOutSkin} className="res-background-image" alt="" />
+        <img
+          src={isLoggedIn ? loggedInSkin : loggedOutSkin}
+          className="res-background-image"
+          alt=""
+        />
+
         <div className="res-email-overlay">
-          {auth.isLoading ? "SYNCING..." : isLoggedIn ? `LOGGED IN: ${auth.user?.email}` : ""}
+          {auth.isLoading ? 'SYNCING...' : isLoggedIn ? `LOGGED IN: ${auth.user?.email}` : ''}
         </div>
 
-        <div className="res-visualizer-screen">
-          {currentPrint && <img src={currentPrint} className="res-print-internal" alt="" />}
+        {/* Visualizer area (different placement for LO vs LI if needed) */}
+        <div className={`res-visualizer-screen ${isLoggedIn ? 'vs-li' : 'vs-lo'}`}>
+          {currentPrint && <img src={currentPrint} className="res-print-internal" alt="Sound Print" />}
         </div>
 
+        {/* Invisible hotspots */}
         <div className="res-interactive-layer">
           {isLoggedIn ? (
             <>
               <button className="hs hs-download" onClick={downloadSession} />
-              <button className="hs hs-save" onClick={() => savePerformance(ritual.finalEQState, state.file?.name || 'Track', 'hash')} />
-              <button className="hs hs-replay-li" onClick={() => { reset(); navigate('/instrument'); }} />
-              <button className="hs hs-home-li" onClick={() => { reset(); navigate('/'); }} />
-              <button className="hs hs-signout-li" onClick={signOut} />
+              <button className="hs hs-save" onClick={handleSave} />
+              <button className="hs hs-replay-li" onClick={replay} />
+              <button className="hs hs-home-li" onClick={goHome} />
+              <button className="hs hs-signout-li" onClick={handleSignOut} />
             </>
           ) : (
             <>
               <button className="hs hs-google" onClick={() => safePersistAndRedirect('google')} />
               <button className="hs hs-discord" onClick={() => safePersistAndRedirect('discord')} />
-              <input type="email" className="hs-input hs-input-email" value={email} onChange={e => setEmail(e.target.value)} />
-              <input type="password" className="hs-input hs-input-pass" value={password} onChange={e => setPassword(e.target.value)} />
-              <button className="hs hs-email-signin" onClick={() => supabase.auth.signInWithPassword({ email, password })} />
-              <button className="hs hs-replay-lo" onClick={() => { reset(); navigate('/instrument'); }} />
+              <button className="hs hs-replay-lo" onClick={replay} />
             </>
           )}
         </div>
