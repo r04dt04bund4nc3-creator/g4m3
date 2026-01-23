@@ -67,23 +67,23 @@ export const FlowFieldInstrument: React.FC<Props> = ({ pointer01, countdownProgr
 
           varying vec2 vUv;
 
-          vec3 bandColor(float x01) {
-            float b = clamp(floor(x01 * float(MAX_BANDS)), 0.0, float(MAX_BANDS - 1));
+          vec3 bandColor(float x) {
+            float b = clamp(floor(x * float(MAX_BANDS)), 0.0, float(MAX_BANDS - 1));
             int i = int(b) * 3;
             return vec3(uPalette[i], uPalette[i+1], uPalette[i+2]);
           }
 
-          vec3 materialize(vec3 base, float y01) {
-            if (y01 < 0.33) {
-              float t = y01 / 0.33;
+          vec3 materialize(vec3 base, float y) {
+            if (y < 0.33) {
+              float t = y / 0.33;
               return base * vec3(0.35, 0.7, 1.2) * mix(0.25, 0.55, t);
-            } else if (y01 < 0.66) {
+            } else if (y < 0.66) {
               float g = dot(base, vec3(0.299, 0.587, 0.114));
               vec3 gray = vec3(g);
-              float t = (y01 - 0.33) / 0.33;
+              float t = (y - 0.33) / 0.33;
               return mix(gray, base, 0.2) * mix(0.35, 0.75, t);
             } else {
-              float t = (y01 - 0.66) / 0.34;
+              float t = (y - 0.66) / 0.34;
               return base * vec3(1.35, 0.85, 0.25) * mix(0.7, 1.8, t);
             }
           }
@@ -95,16 +95,23 @@ export const FlowFieldInstrument: React.FC<Props> = ({ pointer01, countdownProgr
             vec3 col = vec3(0.01, 0.04, 0.06);
             col += 0.05 * sin(vec3(uv.x * 10.0, uv.y * 14.0, (uv.x+uv.y) * 6.0) + uTime * 0.2);
 
-            // pointer glow
+            // pointer glow (bright and obvious)
             vec2 aspect = vec2(uRes.x / min(uRes.x, uRes.y), uRes.y / min(uRes.x, uRes.y));
             float d = length((uv - uPointer) * aspect);
 
             vec3 base = bandColor(uPointer.x);
             vec3 ink = materialize(base, uPointer.y);
 
-            float radius = mix(0.09, 0.05, uDown);
+            // Larger radius and stronger glow
+            float radius = mix(0.15, 0.08, uDown);
             float glow = smoothstep(radius, 0.0, d);
-            col += ink * glow * (0.9 + 0.6 * uDown);
+            col += ink * glow * (1.5 + 1.0 * uDown); // Brighter!
+
+            // Add a subtle trail (not just a dot)
+            if (uDown > 0.5) {
+              float trail = smoothstep(0.3, 0.0, d);
+              col += ink * trail * 0.3;
+            }
 
             // countdown: subtle global lift so performer feels the end approaching
             col *= 1.0 + uCountdown * 0.25;
