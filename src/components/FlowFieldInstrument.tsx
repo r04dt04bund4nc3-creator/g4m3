@@ -1,5 +1,5 @@
-import { useFrame, useThree } from '@react-three/fiber';
-import React, { useMemo, useRef } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
+import { useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { BAND_COLORS } from '../config/bandColors';
 
@@ -11,8 +11,11 @@ type Props = {
 };
 
 export const FlowFieldInstrument: React.FC<Props> = ({ pointer01, countdownProgress }) => {
-  const { size } = useThree();
   const mat = useRef<THREE.ShaderMaterial | null>(null);
+
+  // IMPORTANT: invalidate() forces a redraw when uniforms change
+  const invalidate = useThree((s) => s.invalidate);
+  const size = useThree((s) => s.size);
 
   const palette = useMemo(() => {
     const arr = new Float32Array(MAX_BANDS * 3);
@@ -24,14 +27,26 @@ export const FlowFieldInstrument: React.FC<Props> = ({ pointer01, countdownProgr
     return arr;
   }, []);
 
-  useFrame(({ clock }) => {
+  // Push React state -> shader uniforms (no useFrame needed)
+  useEffect(() => {
     if (!mat.current) return;
-    mat.current.uniforms.uTime.value = clock.elapsedTime;
+
     mat.current.uniforms.uPointer.value.set(pointer01.x, pointer01.y);
     mat.current.uniforms.uDown.value = pointer01.down ? 1 : 0;
     mat.current.uniforms.uCountdown.value = countdownProgress;
     mat.current.uniforms.uRes.value.set(size.width, size.height);
-  });
+
+    // force redraw
+    invalidate();
+  }, [
+    pointer01.x,
+    pointer01.y,
+    pointer01.down,
+    countdownProgress,
+    size.width,
+    size.height,
+    invalidate,
+  ]);
 
   return (
     <mesh frustumCulled={false}>
@@ -39,7 +54,6 @@ export const FlowFieldInstrument: React.FC<Props> = ({ pointer01, countdownProgr
       <shaderMaterial
         ref={mat}
         uniforms={{
-          uTime: { value: 0 },
           uPointer: { value: new THREE.Vector2(0.5, 0.5) },
           uDown: { value: 0 },
           uCountdown: { value: 0 },
@@ -58,67 +72,42 @@ export const FlowFieldInstrument: React.FC<Props> = ({ pointer01, countdownProgr
 
           #define MAX_BANDS 36
 
-          uniform float uTime;
           uniform vec2 uPointer;   // 0..1
-          uniform float uDown;
+          uniform float uDown;     // 0/1
           uniform float uCountdown;
           uniform vec2 uRes;
           uniform float uPalette[MAX_BANDS * 3];
 
           varying vec2 vUv;
 
-          vec3 bandColor(float x) {
-            float b = clamp(floor(x * float(MAX_BANDS)), 0.0, float(MAX_BANDS - 1));
+          vec3 bandColor(float x01) {
+            float b = clamp(floor(x01 * float(MAX_BANDS)), 0.0, float(MAX_BANDS - 1));
             int i = int(b) * 3;
             return vec3(uPalette[i], uPalette[i+1], uPalette[i+2]);
-          }
-
-          vec3 materialize(vec3 base, float y) {
-            if (y < 0.33) {
-              float t = y / 0.33;
-              return base * vec3(0.35, 0.7, 1.2) * mix(0.25, 0.55, t);
-            } else if (y < 0.66) {
-              float g = dot(base, vec3(0.299, 0.587, 0.114));
-              vec3 gray = vec3(g);
-              float t = (y - 0.33) / 0.33;
-              return mix(gray, base, 0.2) * mix(0.35, 0.75, t);
-            } else {
-              float t = (y - 0.66) / 0.34;
-              return base * vec3(1.35, 0.85, 0.25) * mix(0.7, 1.8, t);
-            }
           }
 
           void main() {
             vec2 uv = vUv;
 
-            // base background
-            vec3 col = vec3(0.01, 0.04, 0.06);
-            col += 0.05 * sin(vec3(uv.x * 10.0, uv.y * 14.0, (uv.x+uv.y) * 6.0) + uTime * 0.2);
+            // DEBUG BACKGROUND:
+            // This should visibly change color as your pointer moves.
+            vec3 debug = vec3(uPointer.x, uPointer.y, uDown);
 
-            // pointer glow (bright and obvious)
+            // dark base + debug tint so it's obvious when uniforms change
+            vec3 col = vec3(0.02, 0.04, 0.07);
+            col = mix(col, debug, 0.35);
+
+            // dot under pointer
             vec2 aspect = vec2(uRes.x / min(uRes.x, uRes.y), uRes.y / min(uRes.x, uRes.y));
             float d = length((uv - uPointer) * aspect);
+            float dot = smoothstep(0.08, 0.0, d);
 
-            vec3 base = bandColor(uPointer.x);
-            vec3 ink = materialize(base, uPointer.y);
+            vec3 dotCol = bandColor(uPointer.x);
+            col += dotCol * dot * (1.2 + 0.8 * uDown);
 
-            // Larger radius and stronger glow
-            float radius = mix(0.15, 0.08, uDown);
-            float glow = smoothstep(radius, 0.0, d);
-            col += ink * glow * (1.5 + 1.0 * uDown); // Brighter!
+            // subtle "end is coming" lift
+            col *= 1.0 + uCountdown * 0.2;
 
-            // Add a subtle trail (not just a dot)
-            if (uDown > 0.5) {
-              float trail = smoothstep(0.3, 0.0, d);
-              col += ink * trail * 0.3;
-            }
-
-            // countdown: subtle global lift so performer feels the end approaching
-            col *= 1.0 + uCountdown * 0.25;
-
-            // tonemap
-            col = col / (1.0 + col);
-            col = pow(col, vec3(0.4545));
             gl_FragColor = vec4(col, 1.0);
           }
         `}
