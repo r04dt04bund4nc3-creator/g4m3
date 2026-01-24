@@ -47,23 +47,23 @@ const SIM_FRAGMENT = `
     distVec.x *= uAspect;
     float dist = length(distVec);
     
-    float radius = 0.06;
+    float radius = 0.05;
     float brush = smoothstep(radius, 0.0, dist);
     
     // 3. Inject Input
     if (uDown > 0.5) {
-       float inputIntensity = brush * 0.8; 
+       float inputIntensity = brush * 0.5; // Reduced slightly for better accumulation
        
        if (inputIntensity > 0.01) {
          prev.r = min(1.0, prev.r + inputIntensity);
-         prev.g = mix(prev.g, uPointer.y, 0.5);
+         prev.g = mix(prev.g, uPointer.y, 0.3); // Slower morphology change
          prev.b = uPointer.x;
        }
     }
     
     // 4. Decay
-    prev.r *= 0.985; 
-    if (prev.r < 0.01) prev.r = 0.0;
+    prev.r *= 0.98; // Trail length
+    if (prev.r < 0.001) prev.r = 0.0;
     
     gl_FragColor = prev;
   }
@@ -92,8 +92,13 @@ const RENDER_FRAGMENT = `
     float inputY = data.g;
     float inputX = data.b;
 
+    // BACKGROUND: Dark breathing ambiance
+    vec3 bgColor = vec3(0.05, 0.08, 0.12);
+    // Subtle noise/plasma in background to prove shader is alive
+    bgColor += 0.01 * sin(vUv.y * 10.0 + uTime); 
+
     if (intensity < 0.01) {
-      gl_FragColor = vec4(0.02, 0.03, 0.05, 1.0);
+      gl_FragColor = vec4(bgColor, 1.0);
       return;
     }
 
@@ -108,30 +113,30 @@ const RENDER_FRAGMENT = `
 
     // 1. WATER (Bottom)
     if (inputY < 0.33) {
-       finalColor = mix(baseColor * 0.5, baseColor * 1.2, intensity);
-       finalColor += vec3(0.0, 0.1, 0.2) * intensity;
+       finalColor = mix(baseColor * 0.5, baseColor * 1.5, intensity);
+       finalColor += vec3(0.1, 0.3, 0.4) * intensity;
     } 
     // 2. SMOKE (Middle)
     else if (inputY < 0.66) {
        float t = (inputY - 0.33) / 0.33;
        vec3 gray = vec3(dot(baseColor, vec3(0.299, 0.587, 0.114)));
-       finalColor = mix(gray, baseColor, 0.3 + 0.7 * t);
-       finalColor *= (0.5 + 0.5 * intensity); 
+       finalColor = mix(gray, baseColor, 0.2 + 0.8 * t);
+       finalColor += vec3(0.1) * intensity;
     } 
     // 3. FIRE (Top)
     else {
        float t = (inputY - 0.66) / 0.34;
-       finalColor = baseColor * (1.0 + 2.0 * t * intensity);
-       finalColor += vec3(0.2, 0.1, 0.0) * intensity * intensity;
+       finalColor = baseColor * (1.0 + 3.0 * t * intensity);
+       finalColor += vec3(0.3, 0.1, 0.0) * intensity;
     }
 
-    // Apply intensity falloff
-    finalColor *= smoothstep(0.0, 0.2, intensity);
+    // Blend with background
+    vec3 composite = mix(bgColor, finalColor, smoothstep(0.0, 0.4, intensity));
+    
+    // Global Lift (Countdown)
+    composite *= (1.0 + uCountdown * 0.5);
 
-    // Apply Countdown "Lift" (Global Brightness Boost)
-    finalColor *= (1.0 + uCountdown * 0.5);
-
-    gl_FragColor = vec4(finalColor, 1.0);
+    gl_FragColor = vec4(composite, 1.0);
   }
 `;
 
@@ -143,13 +148,15 @@ type Props = {
 export const FlowFieldInstrument: React.FC<Props> = ({ pointer01, countdownProgress = 0 }) => {
   const { size, gl } = useThree();
   
-  // Create two render targets for Ping-Pong
+  // FIX: Create FBOs with safe texture types and explicit wrapping
   const [targetA, targetB] = useMemo(() => {
     const opts = {
       minFilter: THREE.LinearFilter,
       magFilter: THREE.LinearFilter,
       format: THREE.RGBAFormat,
-      type: THREE.FloatType, 
+      type: THREE.HalfFloatType, // FIX: HalfFloat is safer for mobile/webgl compat
+      wrapS: THREE.ClampToEdgeWrapping, // FIX: Essential for NPOT screens
+      wrapT: THREE.ClampToEdgeWrapping,
       stencilBuffer: false,
       depthBuffer: false,
     };
@@ -164,7 +171,14 @@ export const FlowFieldInstrument: React.FC<Props> = ({ pointer01, countdownProgr
   const simMaterial = useRef<THREE.ShaderMaterial>(null);
   const renderMaterial = useRef<THREE.ShaderMaterial>(null);
   const simScene = useMemo(() => new THREE.Scene(), []);
-  const simCamera = useMemo(() => new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1), []);
+  
+  // FIX: Position camera at Z=1 so it sees the plane at Z=0
+  const simCamera = useMemo(() => {
+    const cam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+    cam.position.z = 1; 
+    return cam;
+  }, []);
+  
   const simMesh = useRef<THREE.Mesh>(null);
 
   useEffect(() => {
