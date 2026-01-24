@@ -20,7 +20,6 @@ function makePaletteArray() {
   return arr;
 }
 
-// Fullscreen quad vertex (clipspace)
 const FSQ_VERT = /* glsl */ `
   varying vec2 vUv;
   void main() {
@@ -30,62 +29,54 @@ const FSQ_VERT = /* glsl */ `
 `;
 
 /**
- * SIMULATION PASS
- * - previous frame is slightly advected by a curl field (smoke drift)
- * - small spark-like brush injects intensity around the fingertip
- * - we store:
- *    r: intensity
- *    g: y01 for material mode (water/smoke/fire)
- *    b: x01 for band color
+ * SIMULATION SHADER
+ * Logic: Buoyancy (upward drift) + Advection (swirl) + Injection (pointer)
  */
 const SIM_FRAG = /* glsl */ `
   precision highp float;
 
   uniform sampler2D uPrev;
-  uniform vec2  uPointer;   // 0..1
-  uniform float uDown;      // 0/1
-  uniform vec2  uRes;       // px
+  uniform vec2 uPointer;
+  uniform float uDown;
+  uniform vec2 uRes;
   uniform float uTime;
 
   varying vec2 vUv;
 
+  float hash(vec2 p) {
+    return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453);
+  }
+
   void main() {
-    vec2 uv = vUv;
+    // 1. BUOYANCY & CURL
+    // We sample slightly below the current pixel to make colors "rise"
+    // We add a tiny bit of horizontal oscillation (smoke curl)
+    float drift = 0.0015;
+    float curl = sin(vUv.y * 10.0 + uTime * 2.0) * 0.001;
+    vec2 sampleCoord = vUv + vec2(curl, -drift);
+    
+    vec4 prev = texture2D(uPrev, sampleCoord);
 
-    // --- CURL FLOW FIELD (smoke drift) ---
-    float t = uTime * 0.25;
-    float sx = sin((uv.y + t) * 6.0) + sin((uv.x - t * 1.3) * 4.0);
-    float sy = cos((uv.x - t * 0.8) * 5.0) - cos((uv.y + t * 1.1) * 7.0);
-    vec2 flow = vec2(sx, sy) * 0.0025;
-
-    // slight upward pull (smoke rise)
-    flow.y += 0.0015;
-
-    vec4 prev = texture2D(uPrev, uv - flow);
-
-    // --- FADE ---
-    float fade = 0.992;
-    prev.r *= fade;
+    // 2. DECAY
+    // Slowly fade intensity, but keep the color/style data longer
+    prev.r *= 0.994; 
     if (prev.r < 0.001) prev.r = 0.0;
 
-    // --- BRUSH INJECTION ---
-    if (uDown > 0.5) {
-      // aspect-correct distance from pointer
-      vec2 aspect = vec2(uRes.x / min(uRes.x, uRes.y), uRes.y / min(uRes.x, uRes.y));
-      vec2 dp = (uv - uPointer) * aspect;
-      float d = length(dp);
+    // 3. BRUSH (The Spark)
+    vec2 aspect = vec2(uRes.x / min(uRes.x, uRes.y), uRes.y / min(uRes.x, uRes.y));
+    float d = length((vUv - uPointer) * aspect);
 
-      // very small gaussian-like spark
-      float radius = 0.028;
-      float brush = exp(-pow(d / radius, 2.0) * 2.5); // 1 at center, quick falloff
+    // Tiny concentrated spark
+    float radius = 0.008;
+    float brush = smoothstep(radius, 0.0, d);
 
-      float add = brush * 0.9;
-      if (add > 0.001) {
-        prev.r = clamp(prev.r + add, 0.0, 1.0);
-        prev.g = mix(prev.g, uPointer.y, 0.35);
-        prev.b = uPointer.x;
-        prev.a = 1.0;
-      }
+    if (uDown > 0.5 && brush > 0.0) {
+      float add = brush * 0.8;
+      prev.r = min(1.0, prev.r + add);
+      // Inject style and color
+      prev.g = mix(prev.g, uPointer.y, 0.2);
+      prev.b = uPointer.x;
+      prev.a = 1.0;
     }
 
     gl_FragColor = prev;
@@ -93,107 +84,88 @@ const SIM_FRAG = /* glsl */ `
 `;
 
 /**
- * RENDER PASS
- * - samples the simulation texture with a small blur to get soft volumes
- * - colors using X→band palette, Y→material (water/smoke/fire)
- * - adds a subtle fingertip glow as a visual locator
+ * RENDER SHADER
+ * Logic: Background ambiance + Materializing Smoke/Water/Fire + Powder Grain
  */
 const RENDER_FRAG = /* glsl */ `
   precision highp float;
-
   #define MAX_BANDS 36
 
   uniform sampler2D uTex;
-  uniform vec2  uPointer;   // 0..1
-  uniform float uDown;      // 0/1
-  uniform vec2  uRes;
+  uniform vec2 uPointer;
+  uniform float uDown;
+  uniform vec2 uRes;
   uniform float uTime;
   uniform float uCountdown;
   uniform float uPalette[MAX_BANDS * 3];
 
   varying vec2 vUv;
 
-  vec3 bandColor(float x01) {
-    float b = clamp(floor(x01 * float(MAX_BANDS)), 0.0, float(MAX_BANDS - 1.0));
-    int i = int(b) * 3;
-    return vec3(uPalette[i], uPalette[i+1], uPalette[i+2]);
+  float rand(vec2 n) { 
+    return fract(sin(dot(n, vec2(12.9898, 4.1414))) * 43758.5453);
   }
 
-  vec3 materialize(vec3 base, float y01) {
-    // water -> smoke -> fire
-    if (y01 < 0.33) {
-      // water: cool, glassy
-      float t = y01 / 0.33;
-      return base * vec3(0.45, 0.85, 1.4) * mix(0.25, 0.7, t);
-    } else if (y01 < 0.66) {
-      // smoke: milky, desaturated
-      float g = dot(base, vec3(0.299, 0.587, 0.114));
-      vec3 gray = vec3(g);
-      float t = (y01 - 0.33) / 0.33;
-      return mix(gray, base, 0.25 + 0.55 * t) * mix(0.35, 0.9, t);
-    } else {
-      // fire: hot, additive
-      float t = (y01 - 0.66) / 0.34;
-      return base * vec3(1.4, 0.9, 0.35) * mix(0.7, 2.0, t);
+  vec3 getPaletteColor(float x01) {
+    float b = clamp(floor(x01 * float(MAX_BANDS)), 0.0, float(MAX_BANDS - 1.0));
+    int i = int(b) * 3;
+    // Manual lookup to avoid dynamic indexing issues on some mobile GPUs
+    for(int j=0; j<MAX_BANDS; j++) {
+      if(int(b) == j) return vec3(uPalette[j*3], uPalette[j*3+1], uPalette[j*3+2]);
     }
+    return vec3(0.5);
   }
 
   void main() {
-    // --- LIVING BACKGROUND ---
-    vec3 col = vec3(0.02, 0.03, 0.05);
-    col += 0.02 * sin(vec3(
-      vUv.x * 7.0 + uTime * 0.25,
-      vUv.y * 9.0 - uTime * 0.18,
-      (vUv.x + vUv.y) * 5.0 + uTime * 0.21
-    ));
+    // 1. ATMOSPHERIC BACKGROUND
+    vec3 col = vec3(0.005, 0.008, 0.012);
+    float bgNoise = rand(vUv + uTime * 0.01);
+    col += bgNoise * 0.015; // Subtle background static
 
-    // --- SOFT INTENSITY FIELD (small blur) ---
-    vec2 px = 1.0 / uRes;
-    vec4 c0 = texture2D(uTex, vUv);
-    float i0 = c0.r;
-    float i1 = texture2D(uTex, vUv + vec2( px.x, 0.0)).r;
-    float i2 = texture2D(uTex, vUv + vec2(-px.x, 0.0)).r;
-    float i3 = texture2D(uTex, vUv + vec2(0.0,  px.y)).r;
-    float i4 = texture2D(uTex, vUv + vec2(0.0, -px.y)).r;
+    // 2. SAMPLE SIMULATION
+    vec4 data = texture2D(uTex, vUv);
+    float intensity = data.r;
+    float styleY = data.g;
+    float colorX = data.b;
 
-    float intensity = (i0 * 2.0 + i1 + i2 + i3 + i4) / 6.0;
+    if (intensity > 0.0) {
+      vec3 base = getPaletteColor(colorX);
+      vec3 material;
 
-    // keep style/color info from center sample
-    float styleY = c0.g;
-    float colorX = c0.b;
+      // Logic for Water -> Smoke -> Fire transitions
+      if (styleY < 0.33) {
+        // WATER
+        material = base * vec3(0.6, 0.9, 1.4) * (0.4 + intensity);
+      } else if (styleY < 0.66) {
+        // SMOKE
+        float gray = dot(base, vec3(0.299, 0.587, 0.114));
+        material = mix(vec3(gray), base, 0.4) * (0.6 + intensity);
+      } else {
+        // FIRE
+        material = base * (1.2 + intensity * 3.0) + vec3(0.4, 0.1, 0.0) * intensity;
+      }
 
-    if (intensity > 0.001) {
-      vec3 base = bandColor(colorX);
-      vec3 vol  = materialize(base, styleY);
+      // 3. POWDER EFFECT
+      // Add fine grain to the settled pigment
+      float grain = rand(vUv * 500.0) * 0.2;
+      material *= (1.0 - grain * (1.0 - intensity));
 
-      // "alive" swirling smoke vs settled pigment
-      float alive   = smoothstep(0.02, 0.22, intensity);
-      float pigment = smoothstep(0.0, 0.16, intensity) * (1.0 - alive);
-
-      // swirling volume (additive-ish)
-      col = mix(col, col + vol * (0.6 + 1.6 * intensity), alive);
-
-      // settled pigment: softly tint background without going gray
-      vec3 dry = mix(base * 0.6, base * 1.15, pigment);
-      col = mix(col, dry, pigment * 0.85);
+      col = mix(col, material, smoothstep(0.0, 0.1, intensity));
     }
 
-    // --- SUBTLE FINGERTIP GLOW (locator) ---
+    // 4. THE FLAME TIP (The Pointer)
     vec2 aspect = vec2(uRes.x / min(uRes.x, uRes.y), uRes.y / min(uRes.x, uRes.y));
-    float dp = length((vUv - uPointer) * aspect);
-    float pr = mix(0.012, 0.022, uDown); // tiny
-    float pGlow = 1.0 - smoothstep(0.0, pr, dp);
+    float distToPointer = length((vUv - uPointer) * aspect);
+    float spark = smoothstep(0.012, 0.0, distToPointer);
+    
+    if (uDown > 0.5) {
+      vec3 sparkColor = getPaletteColor(uPointer.x) * 2.0;
+      col += sparkColor * spark * 0.8;
+    }
 
-    vec3 pBase = bandColor(uPointer.x);
-    vec3 pInk  = materialize(pBase, uPointer.y);
-    col += pInk * pGlow * (0.2 + 0.55 * uDown);
-
-    // --- COUNTDOWN LIFT ---
-    col *= 1.0 + uCountdown * 0.25;
-
-    // tonemap & gamma
-    col = col / (1.0 + col);
-    col = pow(col, vec3(0.4545));
+    // 5. POST
+    col *= (1.0 + uCountdown * 0.4); // End of ritual glow
+    col = col / (1.0 + col); // Reinhard-ish tonemap
+    col = pow(col, vec3(0.4545)); // Gamma correction
 
     gl_FragColor = vec4(col, 1.0);
   }
@@ -205,9 +177,7 @@ export const FlowFieldInstrument: React.FC<Props> = ({
 }) => {
   const { gl, size } = useThree();
 
-  // Ping‑pong render targets
   const targets = useRef<{ a: THREE.WebGLRenderTarget; b: THREE.WebGLRenderTarget } | null>(null);
-
   const simScene = useMemo(() => new THREE.Scene(), []);
   const simCam = useMemo(() => {
     const cam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
@@ -216,12 +186,10 @@ export const FlowFieldInstrument: React.FC<Props> = ({
   }, []);
 
   const palette = useMemo(() => makePaletteArray(), []);
-
   const simMat = useRef<THREE.ShaderMaterial | null>(null);
   const renderMat = useRef<THREE.ShaderMaterial | null>(null);
   const ping = useRef(true);
 
-  // Create FBOs + sim quad
   useEffect(() => {
     const opts = {
       minFilter: THREE.LinearFilter,
@@ -242,11 +210,11 @@ export const FlowFieldInstrument: React.FC<Props> = ({
       vertexShader: FSQ_VERT,
       fragmentShader: SIM_FRAG,
       uniforms: {
-        uPrev:    { value: b.texture },
+        uPrev: { value: b.texture },
         uPointer: { value: new THREE.Vector2(0.5, 0.5) },
-        uDown:    { value: 0 },
-        uRes:     { value: new THREE.Vector2(size.width, size.height) },
-        uTime:    { value: 0 },
+        uDown: { value: 0 },
+        uRes: { value: new THREE.Vector2(size.width, size.height) },
+        uTime: { value: 0 },
       },
     });
 
@@ -254,57 +222,25 @@ export const FlowFieldInstrument: React.FC<Props> = ({
     simQuad.frustumCulled = false;
     simScene.add(simQuad);
 
-    // initial clear
-    const prevClr = new THREE.Color();
-    gl.getClearColor(prevClr);
-    const prevAlpha = gl.getClearAlpha();
-
-    gl.setClearColor(new THREE.Color(0, 0, 0), 1);
-    gl.setRenderTarget(a);
-    gl.clear(true, true, true);
-    gl.setRenderTarget(b);
-    gl.clear(true, true, true);
-    gl.setRenderTarget(null);
-    gl.setClearColor(prevClr, prevAlpha);
-
     return () => {
       simScene.remove(simQuad);
       simQuad.geometry.dispose();
       simMat.current?.dispose();
       a.dispose();
       b.dispose();
-      targets.current = null;
-      simMat.current = null;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [gl, size.width, size.height, simScene]);
 
-  // Resize targets + uniforms
-  useEffect(() => {
-    if (!targets.current) return;
-    targets.current.a.setSize(size.width, size.height);
-    targets.current.b.setSize(size.width, size.height);
-
-    if (simMat.current) {
-      (simMat.current.uniforms.uRes.value as THREE.Vector2).set(size.width, size.height);
-    }
-    if (renderMat.current) {
-      (renderMat.current.uniforms.uRes.value as THREE.Vector2).set(size.width, size.height);
-    }
-  }, [size.width, size.height]);
-
-  // Main loop
   useFrame(({ clock }) => {
     if (!targets.current || !simMat.current || !renderMat.current) return;
 
-    const a = targets.current.a;
-    const b = targets.current.b;
+    const { a, b } = targets.current;
     const write = ping.current ? a : b;
-    const read  = ping.current ? b : a;
+    const read = ping.current ? b : a;
 
-    // SIM
+    // Simulation Step
     simMat.current.uniforms.uPrev.value = read.texture;
-    (simMat.current.uniforms.uPointer.value as THREE.Vector2).set(pointer01.x, pointer01.y);
+    simMat.current.uniforms.uPointer.value.set(pointer01.x, pointer01.y);
     simMat.current.uniforms.uDown.value = pointer01.down ? 1 : 0;
     simMat.current.uniforms.uTime.value = clock.elapsedTime;
 
@@ -312,12 +248,13 @@ export const FlowFieldInstrument: React.FC<Props> = ({
     gl.render(simScene, simCam);
     gl.setRenderTarget(null);
 
-    // RENDER (sample the freshly written texture)
+    // Render Step
     renderMat.current.uniforms.uTex.value = write.texture;
-    (renderMat.current.uniforms.uPointer.value as THREE.Vector2).set(pointer01.x, pointer01.y);
+    renderMat.current.uniforms.uPointer.value.set(pointer01.x, pointer01.y);
     renderMat.current.uniforms.uDown.value = pointer01.down ? 1 : 0;
     renderMat.current.uniforms.uTime.value = clock.elapsedTime;
     renderMat.current.uniforms.uCountdown.value = countdownProgress;
+    renderMat.current.uniforms.uRes.value.set(size.width, size.height);
 
     ping.current = !ping.current;
   });
@@ -330,13 +267,13 @@ export const FlowFieldInstrument: React.FC<Props> = ({
         vertexShader={FSQ_VERT}
         fragmentShader={RENDER_FRAG}
         uniforms={{
-          uTex:       { value: null },
-          uPointer:   { value: new THREE.Vector2(0.5, 0.5) },
-          uDown:      { value: 0 },
-          uRes:       { value: new THREE.Vector2(size.width, size.height) },
-          uTime:      { value: 0 },
+          uTex: { value: null },
+          uPointer: { value: new THREE.Vector2(0.5, 0.5) },
+          uDown: { value: 0 },
+          uRes: { value: new THREE.Vector2(size.width, size.height) },
+          uTime: { value: 0 },
           uCountdown: { value: 0 },
-          uPalette:   { value: palette },
+          uPalette: { value: palette },
         }}
       />
     </mesh>
