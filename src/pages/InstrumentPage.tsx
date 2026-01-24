@@ -212,21 +212,16 @@ const InstrumentPage: React.FC = () => {
       {/* R3F CANVAS - VISUAL INSTRUMENT */}
       <div style={{ width: '100%', height: '100%', opacity: isPlaying ? 1 : 0, transition: 'opacity 1s ease-in' }}>
         <Canvas
-  dpr={[1, 2]}
-  gl={{ 
-    preserveDrawingBuffer: true,
-    antialias: false,
-    alpha: false,
-    stencil: false,
-    depth: false
-  }}
-  onCreated={({ gl }) => {
-    gl.autoClear = false; // Add this line
-  }}
-  orthographic 
-  camera={{ zoom: 1, position: [0, 0, 1] }}
-  style={{ position: 'absolute', inset: 0 }}
->
+          dpr={[1, 2]}
+          gl={{ 
+            preserveDrawingBuffer: true,
+            antialias: false,
+            alpha: false
+          }}
+          orthographic 
+          camera={{ zoom: 1, position: [0, 0, 1] }}
+          style={{ position: 'absolute', inset: 0 }}
+        >
           <FlowFieldInstrument pointer01={pointer01} countdownProgress={0} />
         </Canvas>
       </div>

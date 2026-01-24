@@ -5,6 +5,7 @@ import { BAND_COLORS } from '../config/bandColors';
 
 const MAX_BANDS = 36;
 
+// --- UTILS ---
 function getPaletteArray() {
   const arr = new Float32Array(MAX_BANDS * 3);
   BAND_COLORS.forEach((c, i) => {
@@ -14,6 +15,8 @@ function getPaletteArray() {
   });
   return arr;
 }
+
+// --- SHADERS ---
 
 const SIM_VERTEX = `
   varying vec2 vUv;
@@ -29,27 +32,40 @@ const SIM_FRAGMENT = `
   uniform vec2 uPointer;
   uniform float uDown;
   uniform float uAspect;
+  uniform float uTime;
+  
   varying vec2 vUv;
 
   void main() {
-    vec4 prev = texture2D(uTexture, vUv);
+    vec2 uv = vUv;
     
-    vec2 distVec = (vUv - uPointer);
+    // 1. Sample previous frame (Persistence)
+    vec4 prev = texture2D(uTexture, uv);
+    
+    // 2. Calculate Brush
+    vec2 distVec = (uv - uPointer);
     distVec.x *= uAspect;
-    float d = length(distVec);
+    float dist = length(distVec);
     
-    // Brush influence
-    float brush = smoothstep(0.08, 0.0, d) * uDown;
+    float radius = 0.05;
+    float brush = smoothstep(radius, 0.0, dist);
     
-    // Accumulate intensity in R, store pos in G/B
-    float newIntensity = clamp(prev.r + brush * 0.4, 0.0, 1.0);
-    float newStyleY = mix(prev.g, uPointer.y, brush);
-    float newStyleX = mix(prev.b, uPointer.x, brush);
+    // 3. Inject Input
+    if (uDown > 0.5) {
+       float inputIntensity = brush * 0.5; 
+       
+       if (inputIntensity > 0.01) {
+         prev.r = min(1.0, prev.r + inputIntensity);
+         prev.g = mix(prev.g, uPointer.y, 0.3);
+         prev.b = uPointer.x;
+       }
+    }
     
-    // Decay over time
-    newIntensity *= 0.985;
+    // 4. Decay
+    prev.r *= 0.98; 
+    if (prev.r < 0.001) prev.r = 0.0;
     
-    gl_FragColor = vec4(newIntensity, newStyleY, newStyleX, 1.0);
+    gl_FragColor = prev;
   }
 `;
 
@@ -57,15 +73,17 @@ const RENDER_VERTEX = `
   varying vec2 vUv;
   void main() {
     vUv = uv;
-    gl_Position = vec4(position, 1.0);
+    gl_Position = vec4(position.xy, 0.0, 1.0);
   }
 `;
 
 const RENDER_FRAGMENT = `
   precision highp float;
   uniform sampler2D uTexture;
-  uniform float uPalette[108]; // 36 * 3
+  uniform float uPalette[${MAX_BANDS * 3}];
   uniform float uTime;
+  uniform float uCountdown;
+  
   varying vec2 vUv;
 
   void main() {
@@ -74,30 +92,50 @@ const RENDER_FRAGMENT = `
     float inputY = data.g;
     float inputX = data.b;
 
-    vec3 bgColor = vec3(0.02, 0.03, 0.06);
-    
-    if(intensity < 0.005) {
-       gl_FragColor = vec4(bgColor, 1.0);
-       return;
+    // BACKGROUND: Dark breathing ambiance
+    vec3 bgColor = vec3(0.05, 0.08, 0.12);
+    bgColor += 0.01 * sin(vUv.y * 10.0 + uTime); 
+
+    if (intensity < 0.01) {
+      gl_FragColor = vec4(bgColor, 1.0);
+      return;
     }
 
-    // Direct palette color mapping
-    vec3 baseColor = vec3(0.5);
-    float band = clamp(inputX * 36.0, 0.0, 35.0);
-    int idx = int(band) * 3;
+    // FALLBACK GENERATIVE PALETTE
+    vec3 baseColor = vec3(0.0);
+    if (inputX < 0.16) baseColor = mix(vec3(0.4, 0.8, 0.1), vec3(0.1, 0.6, 0.1), inputX/0.16);
+    else if (inputX < 0.5) baseColor = mix(vec3(0.6, 0.1, 0.1), vec3(0.8, 0.5, 0.1), (inputX-0.16)/0.34);
+    else if (inputX < 0.83) baseColor = mix(vec3(0.1, 0.4, 0.8), vec3(0.4, 0.1, 0.6), (inputX-0.5)/0.33);
+    else baseColor = vec3(0.8, 0.8, 0.1);
+
+    vec3 finalColor = baseColor;
+
+    // 1. WATER (Bottom)
+    if (inputY < 0.33) {
+       finalColor = mix(baseColor * 0.5, baseColor * 1.5, intensity);
+       finalColor += vec3(0.1, 0.3, 0.4) * intensity;
+    } 
+    // 2. SMOKE (Middle)
+    else if (inputY < 0.66) {
+       float t = (inputY - 0.33) / 0.33;
+       vec3 gray = vec3(dot(baseColor, vec3(0.299, 0.587, 0.114)));
+       finalColor = mix(gray, baseColor, 0.2 + 0.8 * t);
+       finalColor += vec3(0.1) * intensity;
+    } 
+    // 3. FIRE (Top)
+    else {
+       float t = (inputY - 0.66) / 0.34;
+       finalColor = baseColor * (1.0 + 3.0 * t * intensity);
+       finalColor += vec3(0.3, 0.1, 0.0) * intensity;
+    }
+
+    // Blend with background
+    vec3 composite = mix(bgColor, finalColor, smoothstep(0.0, 0.4, intensity));
     
-    // Color logic
-    if (inputX < 0.2) baseColor = vec3(0.5, 0.9, 0.1);      // Verdant
-    else if (inputX < 0.5) baseColor = vec3(0.9, 0.3, 0.1); // Ember
-    else if (inputX < 0.8) baseColor = vec3(0.1, 0.4, 0.9); // Abyssal
-    else baseColor = vec3(0.9, 0.8, 0.1);                   // Solar
+    // Global Lift (Countdown)
+    composite *= (1.0 + uCountdown * 0.5);
 
-    vec3 color = baseColor;
-    if (inputY < 0.33) color *= 1.2; // water
-    else if (inputY > 0.66) color += vec3(0.3, 0.1, 0.0); // fire
-
-    vec3 final = mix(bgColor, color * (0.5 + intensity * 1.5), smoothstep(0.0, 0.2, intensity));
-    gl_FragColor = vec4(final, 1.0);
+    gl_FragColor = vec4(composite, 1.0);
   }
 `;
 
@@ -106,73 +144,109 @@ type Props = {
   countdownProgress?: number;
 };
 
-export const FlowFieldInstrument: React.FC<Props> = ({ pointer01 }) => {
+export const FlowFieldInstrument: React.FC<Props> = ({ pointer01, countdownProgress = 0 }) => {
   const { size, gl } = useThree();
   
   const [targetA, targetB] = useMemo(() => {
     const opts = {
-      format: THREE.RGBAFormat,
-      type: THREE.HalfFloatType,
       minFilter: THREE.LinearFilter,
       magFilter: THREE.LinearFilter,
+      format: THREE.RGBAFormat,
+      type: THREE.HalfFloatType,
+      wrapS: THREE.ClampToEdgeWrapping,
+      wrapT: THREE.ClampToEdgeWrapping,
+      stencilBuffer: false,
+      depthBuffer: false,
     };
-    return [
-      new THREE.WebGLRenderTarget(size.width, size.height, opts),
-      new THREE.WebGLRenderTarget(size.width, size.height, opts)
-    ];
+    const t1 = new THREE.WebGLRenderTarget(size.width, size.height, opts);
+    const t2 = new THREE.WebGLRenderTarget(size.width, size.height, opts);
+    return [t1, t2];
+  }, []); 
+
+  const currentTarget = useRef(targetA);
+  const prevTarget = useRef(targetB);
+  
+  const simMaterial = useRef<THREE.ShaderMaterial>(null);
+  const renderMaterial = useRef<THREE.ShaderMaterial>(null);
+  const simScene = useMemo(() => new THREE.Scene(), []);
+  
+  // Camera pushed back to z=1
+  const simCamera = useMemo(() => {
+    const cam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+    cam.position.z = 1; 
+    return cam;
+  }, []);
+  
+  const simMesh = useRef<THREE.Mesh>(null);
+
+  // FIX: Use setClearColor correctly
+  useEffect(() => {
+    const initColor = new THREE.Color(0.001, 0.001, 0.001);
+    
+    // Save previous clear color state if necessary, but here we just set and forget 
+    // because we need a black base for the simulation.
+    // NOTE: We need to use setClearColor(color, alpha)
+    
+    gl.setRenderTarget(targetA);
+    gl.setClearColor(initColor, 1);
+    gl.clear(true, true, true);
+
+    gl.setRenderTarget(targetB);
+    gl.setClearColor(initColor, 1);
+    gl.clear(true, true, true);
+
+    gl.setRenderTarget(null);
+  }, [gl, targetA, targetB]);
+
+  useEffect(() => {
+    currentTarget.current.setSize(size.width, size.height);
+    prevTarget.current.setSize(size.width, size.height);
   }, [size.width, size.height]);
 
-  const rtCurrent = useRef(targetA);
-  const rtPrev = useRef(targetB);
-  
-  const simMat = useRef<THREE.ShaderMaterial>(null!);
-  const renderMat = useRef<THREE.ShaderMaterial>(null!);
-  
-  const simScene = useMemo(() => new THREE.Scene(), []);
-  const simCam = useMemo(() => new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1), []);
   const palette = useMemo(() => getPaletteArray(), []);
 
-  // Sync pointer to uniforms WITHOUT waiting for React re-render
-  useFrame((state) => {
-    if (!simMat.current || !renderMat.current) return;
+  useFrame(({ clock }) => {
+    if (!simMaterial.current || !renderMaterial.current || !simMesh.current) return;
 
-    const { gl } = state;
-
-    // 1. Update Sim Uniforms
-    simMat.current.uniforms.uPointer.value.set(pointer01.x, pointer01.y);
-    simMat.current.uniforms.uDown.value = pointer01.down ? 1.0 : 0.0;
-    simMat.current.uniforms.uAspect.value = size.width / size.height;
-    simMat.current.uniforms.uTexture.value = rtPrev.current.texture;
-
-    // 2. Render Simulation
-    gl.setRenderTarget(rtCurrent.current);
-    gl.render(simScene, simCam);
+    // 1. SIMULATION PASS
+    simMesh.current.material = simMaterial.current;
     
-    // 3. Render Final to Screen
-    renderMat.current.uniforms.uTexture.value = rtCurrent.current.texture;
-    renderMat.current.uniforms.uTime.value = state.clock.elapsedTime;
+    simMaterial.current.uniforms.uTexture.value = prevTarget.current.texture;
+    simMaterial.current.uniforms.uPointer.value.set(pointer01.x, pointer01.y);
+    simMaterial.current.uniforms.uDown.value = pointer01.down ? 1.0 : 0.0;
+    simMaterial.current.uniforms.uAspect.value = size.width / size.height;
+    simMaterial.current.uniforms.uTime.value = clock.elapsedTime;
+
+    gl.setRenderTarget(currentTarget.current);
+    gl.render(simScene, simCamera);
     gl.setRenderTarget(null);
 
-    // 4. Swap Ping-Pong
-    const temp = rtCurrent.current;
-    rtCurrent.current = rtPrev.current;
-    rtPrev.current = temp;
+    // 2. RENDER PASS PREP
+    renderMaterial.current.uniforms.uTexture.value = currentTarget.current.texture;
+    renderMaterial.current.uniforms.uTime.value = clock.elapsedTime;
+    renderMaterial.current.uniforms.uCountdown.value = countdownProgress;
+
+    // 3. SWAP
+    const temp = currentTarget.current;
+    currentTarget.current = prevTarget.current;
+    prevTarget.current = temp;
   });
 
   return (
     <>
       {createPortal(
-        <mesh>
+        <mesh ref={simMesh}>
           <planeGeometry args={[2, 2]} />
           <shaderMaterial
-            ref={simMat}
+            ref={simMaterial}
             vertexShader={SIM_VERTEX}
             fragmentShader={SIM_FRAGMENT}
             uniforms={{
               uTexture: { value: null },
               uPointer: { value: new THREE.Vector2(0.5, 0.5) },
               uDown: { value: 0 },
-              uAspect: { value: 1 }
+              uAspect: { value: 1 },
+              uTime: { value: 0 }
             }}
           />
         </mesh>,
@@ -182,14 +256,16 @@ export const FlowFieldInstrument: React.FC<Props> = ({ pointer01 }) => {
       <mesh frustumCulled={false}>
         <planeGeometry args={[2, 2]} />
         <shaderMaterial
-          ref={renderMat}
+          ref={renderMaterial}
           vertexShader={RENDER_VERTEX}
           fragmentShader={RENDER_FRAGMENT}
           uniforms={{
             uTexture: { value: null },
             uPalette: { value: palette },
-            uTime: { value: 0 }
+            uTime: { value: 0 },
+            uCountdown: { value: 0 }
           }}
+          transparent={false}
         />
       </mesh>
     </>
