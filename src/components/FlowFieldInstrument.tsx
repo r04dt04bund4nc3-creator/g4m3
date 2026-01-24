@@ -38,33 +38,24 @@ const SIM_FRAGMENT = `
 
   void main() {
     vec2 uv = vUv;
-    
-    // 1. Sample previous frame (Persistence)
     vec4 prev = texture2D(uTexture, uv);
     
-    // 2. Calculate Brush
-    vec2 distVec = (uv - uPointer);
-    distVec.x *= uAspect;
-    float dist = length(distVec);
-    
-    float radius = 0.05;
-    float brush = smoothstep(radius, 0.0, dist);
-    
-    // 3. Inject Input
-    if (uDown > 0.5) {
-       float inputIntensity = brush * 0.5; 
-       
-       if (inputIntensity > 0.01) {
-         prev.r = min(1.0, prev.r + inputIntensity);
-         prev.g = mix(prev.g, uPointer.y, 0.3);
-         prev.b = uPointer.x;
-       }
+    vec2 d = uv - uPointer;
+    d.x *= uAspect;
+    float dist = length(d);
+
+    float radius = 0.12;
+    float brush = 1.0 - smoothstep(0.0, radius, dist);
+
+    if (uDown > 0.5 && brush > 0.001) {
+      float add = brush * 0.8;
+      prev.r = min(1.0, prev.r + add);
+      prev.g = mix(prev.g, uPointer.y, 0.4);
+      prev.b = uPointer.x;
     }
-    
-    // 4. Decay
-    prev.r *= 0.98; 
-    if (prev.r < 0.001) prev.r = 0.0;
-    
+
+    prev.r *= 0.985;
+    if (prev.r < 0.002) prev.r = 0.0;
     gl_FragColor = prev;
   }
 `;
@@ -89,53 +80,40 @@ const RENDER_FRAGMENT = `
   void main() {
     vec4 data = texture2D(uTexture, vUv);
     float intensity = data.r;
-    float inputY = data.g;
-    float inputX = data.b;
+    float inputY    = data.g;
+    float inputX    = data.b;
 
-    // BACKGROUND: Dark breathing ambiance
-    vec3 bgColor = vec3(0.05, 0.08, 0.12);
-    bgColor += 0.01 * sin(vUv.y * 10.0 + uTime); 
+    vec3 bgColor = vec3(0.04, 0.06, 0.09);
+    bgColor += 0.02 * sin(vec3(vUv.x * 4.0 + uTime, vUv.y * 5.0, (vUv.x+vUv.y)*3.0));
 
     if (intensity < 0.01) {
       gl_FragColor = vec4(bgColor, 1.0);
       return;
     }
 
-    // FALLBACK GENERATIVE PALETTE
-    vec3 baseColor = vec3(0.0);
-    if (inputX < 0.16) baseColor = mix(vec3(0.4, 0.8, 0.1), vec3(0.1, 0.6, 0.1), inputX/0.16);
-    else if (inputX < 0.5) baseColor = mix(vec3(0.6, 0.1, 0.1), vec3(0.8, 0.5, 0.1), (inputX-0.16)/0.34);
-    else if (inputX < 0.83) baseColor = mix(vec3(0.1, 0.4, 0.8), vec3(0.4, 0.1, 0.6), (inputX-0.5)/0.33);
-    else baseColor = vec3(0.8, 0.8, 0.1);
-
-    vec3 finalColor = baseColor;
-
-    // 1. WATER (Bottom)
-    if (inputY < 0.33) {
-       finalColor = mix(baseColor * 0.5, baseColor * 1.5, intensity);
-       finalColor += vec3(0.1, 0.3, 0.4) * intensity;
-    } 
-    // 2. SMOKE (Middle)
-    else if (inputY < 0.66) {
-       float t = (inputY - 0.33) / 0.33;
-       vec3 gray = vec3(dot(baseColor, vec3(0.299, 0.587, 0.114)));
-       finalColor = mix(gray, baseColor, 0.2 + 0.8 * t);
-       finalColor += vec3(0.1) * intensity;
-    } 
-    // 3. FIRE (Top)
-    else {
-       float t = (inputY - 0.66) / 0.34;
-       finalColor = baseColor * (1.0 + 3.0 * t * intensity);
-       finalColor += vec3(0.3, 0.1, 0.0) * intensity;
+    vec3 baseColor;
+    if (inputX < 0.16) {
+      baseColor = mix(vec3(0.4, 0.8, 0.1), vec3(0.1, 0.6, 0.1), inputX/0.16);
+    } else if (inputX < 0.5) {
+      baseColor = mix(vec3(0.6, 0.1, 0.1), vec3(0.9, 0.6, 0.1), (inputX-0.16)/0.34);
+    } else if (inputX < 0.83) {
+      baseColor = mix(vec3(0.1, 0.4, 0.8), vec3(0.4, 0.1, 0.6), (inputX-0.5)/0.33);
+    } else {
+      baseColor = vec3(0.9, 0.9, 0.2);
     }
 
-    // Blend with background
-    vec3 composite = mix(bgColor, finalColor, smoothstep(0.0, 0.4, intensity));
-    
-    // Global Lift (Countdown)
-    composite *= (1.0 + uCountdown * 0.5);
+    vec3 col = baseColor;
+    if (inputY < 0.33) {
+      col = mix(baseColor * 0.4, baseColor * 1.6, intensity) + vec3(0.1, 0.25, 0.4) * intensity;
+    } else if (inputY < 0.66) {
+      float t = (inputY - 0.33) / 0.33;
+      col = mix(vec3(dot(baseColor, vec3(0.3))), baseColor, 0.2 + 0.8 * t) * (0.8 + 0.4 * intensity);
+    } else {
+      float t = (inputY - 0.66) / 0.34;
+      col = baseColor * (1.0 + 3.0 * t * intensity) + vec3(0.3, 0.1, 0.0) * intensity;
+    }
 
-    gl_FragColor = vec4(composite, 1.0);
+    gl_FragColor = vec4(mix(bgColor, col, smoothstep(0.0, 0.3, intensity)) * (1.0 + uCountdown * 0.5), 1.0);
   }
 `;
 
@@ -146,57 +124,33 @@ type Props = {
 
 export const FlowFieldInstrument: React.FC<Props> = ({ pointer01, countdownProgress = 0 }) => {
   const { size, gl } = useThree();
-  
+
   const [targetA, targetB] = useMemo(() => {
     const opts = {
       minFilter: THREE.LinearFilter,
       magFilter: THREE.LinearFilter,
       format: THREE.RGBAFormat,
-      type: THREE.HalfFloatType,
-      wrapS: THREE.ClampToEdgeWrapping,
-      wrapT: THREE.ClampToEdgeWrapping,
-      stencilBuffer: false,
+      type: THREE.UnsignedByteType,
       depthBuffer: false,
+      stencilBuffer: false,
     };
-    const t1 = new THREE.WebGLRenderTarget(size.width, size.height, opts);
-    const t2 = new THREE.WebGLRenderTarget(size.width, size.height, opts);
-    return [t1, t2];
-  }, []); 
+    return [
+      new THREE.WebGLRenderTarget(size.width, size.height, opts),
+      new THREE.WebGLRenderTarget(size.width, size.height, opts)
+    ];
+  }, []);
 
   const currentTarget = useRef(targetA);
   const prevTarget = useRef(targetB);
-  
   const simMaterial = useRef<THREE.ShaderMaterial>(null);
   const renderMaterial = useRef<THREE.ShaderMaterial>(null);
   const simScene = useMemo(() => new THREE.Scene(), []);
-  
-  // Camera pushed back to z=1
   const simCamera = useMemo(() => {
     const cam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
-    cam.position.z = 1; 
+    cam.position.z = 1;
     return cam;
   }, []);
-  
   const simMesh = useRef<THREE.Mesh>(null);
-
-  // FIX: Use setClearColor correctly
-  useEffect(() => {
-    const initColor = new THREE.Color(0.001, 0.001, 0.001);
-    
-    // Save previous clear color state if necessary, but here we just set and forget 
-    // because we need a black base for the simulation.
-    // NOTE: We need to use setClearColor(color, alpha)
-    
-    gl.setRenderTarget(targetA);
-    gl.setClearColor(initColor, 1);
-    gl.clear(true, true, true);
-
-    gl.setRenderTarget(targetB);
-    gl.setClearColor(initColor, 1);
-    gl.clear(true, true, true);
-
-    gl.setRenderTarget(null);
-  }, [gl, targetA, targetB]);
 
   useEffect(() => {
     currentTarget.current.setSize(size.width, size.height);
@@ -208,9 +162,7 @@ export const FlowFieldInstrument: React.FC<Props> = ({ pointer01, countdownProgr
   useFrame(({ clock }) => {
     if (!simMaterial.current || !renderMaterial.current || !simMesh.current) return;
 
-    // 1. SIMULATION PASS
     simMesh.current.material = simMaterial.current;
-    
     simMaterial.current.uniforms.uTexture.value = prevTarget.current.texture;
     simMaterial.current.uniforms.uPointer.value.set(pointer01.x, pointer01.y);
     simMaterial.current.uniforms.uDown.value = pointer01.down ? 1.0 : 0.0;
@@ -221,15 +173,13 @@ export const FlowFieldInstrument: React.FC<Props> = ({ pointer01, countdownProgr
     gl.render(simScene, simCamera);
     gl.setRenderTarget(null);
 
-    // 2. RENDER PASS PREP
     renderMaterial.current.uniforms.uTexture.value = currentTarget.current.texture;
     renderMaterial.current.uniforms.uTime.value = clock.elapsedTime;
     renderMaterial.current.uniforms.uCountdown.value = countdownProgress;
 
-    // 3. SWAP
-    const temp = currentTarget.current;
+    const tmp = currentTarget.current;
     currentTarget.current = prevTarget.current;
-    prevTarget.current = temp;
+    prevTarget.current = tmp;
   });
 
   return (
@@ -246,7 +196,7 @@ export const FlowFieldInstrument: React.FC<Props> = ({ pointer01, countdownProgr
               uPointer: { value: new THREE.Vector2(0.5, 0.5) },
               uDown: { value: 0 },
               uAspect: { value: 1 },
-              uTime: { value: 0 }
+              uTime: { value: 0 },
             }}
           />
         </mesh>,
@@ -263,9 +213,8 @@ export const FlowFieldInstrument: React.FC<Props> = ({ pointer01, countdownProgr
             uTexture: { value: null },
             uPalette: { value: palette },
             uTime: { value: 0 },
-            uCountdown: { value: 0 }
+            uCountdown: { value: 0 },
           }}
-          transparent={false}
         />
       </mesh>
     </>
