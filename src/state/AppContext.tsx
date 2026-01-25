@@ -20,6 +20,7 @@ interface RitualState {
   soundPrintDataUrl: string | null;
   finalEQState: number[];
   isRecording: boolean;
+  shouldRedirectToResult: boolean; // New flag for client-side redirection
 }
 
 interface AuthState {
@@ -49,6 +50,7 @@ interface AppContextType {
   signInWithEmail: (email: string, password: string) => Promise<{ error: AuthError | null }>;
   signOut: () => Promise<void>;
   savePerformance: (gestureData: any, trackName: string, trackHash: string) => Promise<void>;
+  clearRedirectFlag: () => void;
 }
 
 const initialAudioState: AudioState = {
@@ -67,6 +69,7 @@ const initialRitualState: RitualState = {
   soundPrintDataUrl: null,
   finalEQState: [],
   isRecording: false,
+  shouldRedirectToResult: false,
 };
 
 const initialAuthState: AuthState = {
@@ -122,6 +125,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (eq) {
         setRitual(prev => ({ ...prev, finalEQState: JSON.parse(eq) }));
       }
+      
+      // Check if we need to redirect
+      const redirectTarget = sessionStorage.getItem('post-auth-redirect');
+      if (redirectTarget === 'result') {
+        setRitual(prev => ({ ...prev, shouldRedirectToResult: true }));
+        sessionStorage.removeItem('post-auth-redirect');
+        
+        // Clean up the URL hash so the user doesn't see access_token=...
+        if (window.location.hash.includes('access_token')) {
+            window.history.replaceState(null, '', window.location.pathname);
+        }
+      }
     } catch (e) {
       console.warn('Post-auth restore failed:', e);
     }
@@ -175,18 +190,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const captureSoundPrint = useCallback((dataUrl: string) => {
-    // Update state
     setRitual(prev => ({
       ...prev,
       soundPrintDataUrl: dataUrl,
       phase: 'complete',
     }));
-
-    // Persist immediately so auth redirect cannot lose it
     try {
-      if (dataUrl) {
-        sessionStorage.setItem('g4m3_sound_print', dataUrl);
-      }
+      if (dataUrl) sessionStorage.setItem('g4m3_sound_print', dataUrl);
     } catch (e) {
       console.warn('Persist sound print failed:', e);
     }
@@ -203,8 +213,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     async (blob: Blob, finalEQ: number[]) => {
       setAudio(prev => ({ ...prev, recordingBlob: blob }));
       setRitual(prev => ({ ...prev, finalEQState: finalEQ, phase: 'capture', isRecording: false }));
-
-      // Persist recording + EQ immediately, same reason as above
       try {
         if (blob) {
           const dataUrl = await blobToDataURL(blob);
@@ -234,14 +242,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const clearRedirectFlag = useCallback(() => {
+    setRitual(prev => ({ ...prev, shouldRedirectToResult: false }));
+  }, []);
+
+  // Important: Use Origin (Root) to avoid sub-path 404s in dev environments
   const getRedirectUrl = () => {
-    if (typeof window !== 'undefined') {
-      return `${window.location.origin}/auth/callback`;
-    }
-    return 'https://redesigned-disco-r4qjwwp7wrijj2wq44-5173.app.github.dev/auth/callback';
+    return window.location.origin;
   };
 
-  // Save ephemeral state so we can restore it after OAuth full-page redirect
   const persistBeforeOAuth = useCallback(async () => {
     try {
       if (audio.recordingBlob) {
@@ -350,11 +359,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
         signInWithEmail,
         signOut,
         savePerformance,
+        clearRedirectFlag,
       }}
     >
       {children}
     </AppContext.Provider>
   );
+}
+
+// Optional: Custom Hook for components to auto-redirect
+export function useAuthRedirect(navigate: (path: string) => void) {
+  const { ritual, clearRedirectFlag } = useContext(AppContext)!;
+  
+  useEffect(() => {
+    if (ritual.shouldRedirectToResult) {
+      clearRedirectFlag();
+      navigate('/result');
+    }
+  }, [ritual.shouldRedirectToResult, clearRedirectFlag, navigate]);
 }
 
 export function useApp() {
