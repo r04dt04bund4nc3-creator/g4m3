@@ -8,17 +8,17 @@ const MAX_BANDS = 36;
 
 type Props = {
   pointer01: { x: number; y: number; down: boolean };
-  countdownProgress?: number;
+  downcountProgress?: number;
 
-  // Parameterized controls
-  simDriftStrength?: number;    // upward drift
-  simAdvectStrength?: number;   // swirl strength
-  simBlurAmount?: number;       // bloom
-  simDecayLow?: number;         // base decay
-  simDecayHigh?: number;        // high-intensity decay
+  // Visual Tuning Props (with safe defaults)
+  simDriftStrength?: number;
+  simAdvectStrength?: number;
+  simBlurAmount?: number;
+  simDecayLow?: number;
+  simDecayHigh?: number;
   sparkCoreRadius?: number;
   sparkAuraRadius?: number;
-  sparkCoreStrength?: number;
+  sparkStrengthStrength?: number;
   sparkAuraStrength?: number;
   powderStrength?: number;
 };
@@ -41,25 +41,24 @@ const FSQ_VERT = /* glsl */ `
   }
 `;
 
-// SIM PASS
 const SIM_FRAG = /* glsl */ `
   precision highp float;
 
   uniform sampler2D uPrev;
-  uniform vec2 uPointer;   // 0..1
-  uniform float uDown;     // 0/1
-  uniform vec2 uRes;       // px
+  uniform vec2 uPointer;
+  uniform float uDown;
+  uniform vec2 uRes;
   uniform float uTime;
 
-  // parameters
-  uniform float uDriftStrength;
+  // Parameters
+  uniform float uDrStrengthStrength;
   uniform float uAdvectStrength;
   uniform float uBlurAmount;
   uniform float uDecayLow;
   uniform float uDecayHigh;
   uniform float uSparkCoreR;
   uniform float uSparkAuraR;
-  uniform float uSparkCoreStrength;
+  uniform float uSparkStrengthStrength;
   uniform float uSparkAuraStrength;
 
   varying vec2 vUv;
@@ -99,9 +98,9 @@ const SIM_FRAG = /* glsl */ `
     vec2 p = uv * 1.65;
     vec2 vel = curl(p + uTime * 0.05);
     float activity = mix(0.25, 1.0, smoothstep(0.2, 0.9, uv.y));
-
-    // configurable upward drift
-    vel += vec2(0.0, uDriftStrength);
+    
+    // Configurable upward drift
+    vel += vec2(0.0, uDrStrengthStrength);
 
     vec2 advect = vel * (uAdvectStrength * activity) / aspect;
     vec4 prev = texture2D(uPrev, clamp(uv - advect, 0.0, 1.0));
@@ -129,7 +128,7 @@ const SIM_FRAG = /* glsl */ `
     float aura = 1.0 - smoothstep(uSparkCoreR, uSparkAuraR, dist);
 
     if (uDown > 0.5) {
-      float add = core * uSparkCoreStrength + aura * uSparkAuraStrength;
+      float add = core * uSparkStrengthStrength + aura * uSparkAuraStrength;
       if (add > 0.0005) {
         state.r = min(1.0, state.r + add);
         state.g = mix(state.g, uPointer.y, 0.25);
@@ -142,20 +141,17 @@ const SIM_FRAG = /* glsl */ `
   }
 `;
 
-// RENDER PASS
 const RENDER_FRAG = /* glsl */ `
   precision highp float;
-
   #define MAX_BANDS 36
 
   uniform sampler2D uTex;
-  uniform vec2 uPointer;   // 0..1
-  uniform float uDown;     // 0/1
+  uniform vec2 uPointer;
+  uniform float uDown;
   uniform vec2 uRes;
   uniform float uTime;
   uniform float uCountdown;
   uniform float uPalette[MAX_BANDS * 3];
-
   uniform float uPowderStrength;
 
   varying vec2 vUv;
@@ -189,7 +185,6 @@ const RENDER_FRAG = /* glsl */ `
 
   void main() {
     vec2 uv = vUv;
-
     vec3 col = vec3(0.010, 0.018, 0.030);
     col += 0.018 * sin(vec3(uv.x * 6.0, uv.y * 7.0, (uv.x + uv.y) * 4.0) + uTime * 0.12);
 
@@ -204,7 +199,6 @@ const RENDER_FRAG = /* glsl */ `
       vec3 ink = materialize(base, styleY);
 
       float body = smoothstep(0.02, 0.35, intensity);
-
       float powderZone = 1.0 - smoothstep(0.03, 0.14, intensity);
       float grain = hash(uv * uRes * 0.65 + seed * 97.0);
       float powder = powderZone * smoothstep(0.35, 0.80, grain) * uPowderStrength;
@@ -224,21 +218,18 @@ const RENDER_FRAG = /* glsl */ `
 
     vec3 pBase = bandColor(uPointer.x);
     vec3 pInk = materialize(pBase, uPointer.y);
-
     col += pInk * spark * mix(0.08, 0.20, uDown);
 
     col *= 1.0 + uCountdown * 0.18;
-
     col = col / (1.0 + col);
     col = pow(col, vec3(0.4545));
-
     gl_FragColor = vec4(col, 1.0);
   }
 `;
 
 export const FlowFieldInstrument: React.FC<Props> = ({
   pointer01,
-  countdownProgress = 0,
+  downcountProgress = 0,
   simDriftStrength = 0.20,
   simAdvectStrength = 0.010,
   simBlurAmount = 0.10,
@@ -246,12 +237,11 @@ export const FlowFieldInstrument: React.FC<Props> = ({
   simDecayHigh = 0.985,
   sparkCoreRadius = 0.010,
   sparkAuraRadius = 0.030,
-  sparkCoreStrength = 0.70,
+  sparkStrengthStrength = 0.70,
   sparkAuraStrength = 0.10,
   powderStrength = 0.25,
 }) => {
   const { gl, size } = useThree();
-
   const palette = useMemo(() => makePaletteArray(), []);
 
   const targets = useRef<{ a: THREE.WebGLRenderTarget; b: THREE.WebGLRenderTarget } | null>(null);
@@ -292,14 +282,14 @@ export const FlowFieldInstrument: React.FC<Props> = ({
         uDown: { value: 0 },
         uRes: { value: new THREE.Vector2(size.width, size.height) },
         uTime: { value: 0 },
-        uDriftStrength: { value: simDriftStrength },
+        uDrStrengthStrength: { value: simDriftStrength },
         uAdvectStrength: { value: simAdvectStrength },
         uBlurAmount: { value: simBlurAmount },
         uDecayLow: { value: simDecayLow },
-        uDecayHigh: { value: simDecayHigh },
+        ecayHigh: { value: simDecayHigh },
         uSparkCoreR: { value: sparkCoreRadius },
         uSparkAuraR: { value: sparkAuraRadius },
-        uSparkCoreStrength: { value: sparkCoreStrength },
+        uSparkStrengthStrength: { value: sparkStrengthStrength },
         uSparkAuraStrength: { value: sparkAuraStrength },
       },
     });
@@ -329,45 +319,14 @@ export const FlowFieldInstrument: React.FC<Props> = ({
       targets.current = null;
       simMat.current = null;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Keep parameter uniforms in sync when props change
-  useEffect(() => {
-    if (!simMat.current) return;
-    simMat.current.uniforms.uDriftStrength.value = simDriftStrength;
-    simMat.current.uniforms.uAdvectStrength.value = simAdvectStrength;
-    simMat.current.uniforms.uBlurAmount.value = simBlurAmount;
-    simMat.current.uniforms.uDecayLow.value = simDecayLow;
-    simMat.current.uniforms.uDecayHigh.value = simDecayHigh;
-    simMat.current.uniforms.uSparkCoreR.value = sparkCoreRadius;
-    simMat.current.uniforms.uSparkAuraR.value = sparkAuraRadius;
-    simMat.current.uniforms.uSparkCoreStrength.value = sparkCoreStrength;
-    simMat.current.uniforms.uSparkAuraStrength.value = sparkAuraStrength;
-  }, [
-    simDriftStrength,
-    simAdvectStrength,
-    simBlurAmount,
-    simDecayLow,
-    simDecayHigh,
-    sparkCoreRadius,
-    sparkAuraRadius,
-    sparkCoreStrength,
-    sparkAuraStrength,
-  ]);
+  }, [size.width, size.height]);
 
   useEffect(() => {
     if (!targets.current) return;
-
     targets.current.a.setSize(size.width, size.height);
     targets.current.b.setSize(size.width, size.height);
-
-    if (simMat.current) {
-      (simMat.current.uniforms.uRes.value as THREE.Vector2).set(size.width, size.height);
-    }
-    if (renderMat.current) {
-      (renderMat.current.uniforms.uRes.value as THREE.Vector2).set(size.width, size.height);
-    }
+    if (simMat.current) (simMat.current.uniforms.uRes.value as THREE.Vector2).set(size.width, size.height);
+    if (renderMat.current) (renderMat.current.uniforms.uRes.value as THREE.Vector2).set(size.width, size.height);
   }, [size.width, size.height]);
 
   useFrame(({ clock }) => {
@@ -375,11 +334,9 @@ export const FlowFieldInstrument: React.FC<Props> = ({
 
     const a = targets.current.a;
     const b = targets.current.b;
-
     const write = ping.current ? a : b;
     const read = ping.current ? b : a;
 
-    // SIM uniforms
     simMat.current.uniforms.uPrev.value = read.texture;
     (simMat.current.uniforms.uPointer.value as THREE.Vector2).set(pointer01.x, pointer01.y);
     simMat.current.uniforms.uDown.value = pointer01.down ? 1 : 0;
@@ -389,13 +346,12 @@ export const FlowFieldInstrument: React.FC<Props> = ({
     gl.render(simScene, simCam);
     gl.setRenderTarget(null);
 
-    // RENDER uniforms
     renderMat.current.uniforms.uTex.value = write.texture;
     (renderMat.current.uniforms.uPointer.value as THREE.Vector2).set(pointer01.x, pointer01.y);
     renderMat.current.uniforms.uDown.value = pointer01.down ? 1 : 0;
     (renderMat.current.uniforms.uRes.value as THREE.Vector2).set(size.width, size.height);
     renderMat.current.uniforms.uTime.value = clock.elapsedTime;
-    renderMat.current.uniforms.uCountdown.value = countdownProgress;
+    renderMat.current.uniforms.uCountdown.value = downcountProgress;
     renderMat.current.uniforms.uPowderStrength.value = powderStrength;
 
     ping.current = !ping.current;
