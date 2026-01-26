@@ -3,108 +3,122 @@
 .res-page-root {
   position: fixed;
   inset: 0;
-  background-color: #050810;
+  background: #050810;
   display: flex;
-  justify-content: center;
   align-items: center;
+  justify-content: center;
   overflow: hidden;
-  z-index: 9999;
 }
 
-/* Fill the window */
+/* Maintain stable layout for hotspots:
+   - container always stays 16:9
+   - image is not cropped
+*/
 .res-machine-container {
   position: relative;
-  width: 100vw;
-  height: 100vh;
+  aspect-ratio: 16 / 9;
+  width: min(100vw, calc(100dvh * (16 / 9)));
+  height: min(100dvh, calc(100vw * (9 / 16)));
 }
 
-/* Keep the behavior that already works for your logged-in screen */
 .res-background-image {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
-  display: block;
-  object-fit: fill;
+  object-fit: contain;
+  user-select: none;
   pointer-events: none;
 }
 
-.res-email-overlay {
-  position: absolute;
-  top: 14.5%;
-  left: 0;
-  width: 100%;
-  text-align: center;
-  color: #4ade80;
-  font-family: monospace;
-  font-size: 1.1vw;
-  pointer-events: none;
-  text-transform: uppercase;
-}
-
-/* Visualizer base */
+/* ---- Monitor / “screen” area ----
+   These values are calibrated to your new images (starting point).
+   If needed: temporarily enable debug border below.
+*/
 .res-visualizer-screen {
   position: absolute;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  left: 50%;
+  top: 41.5%;
+  transform: translate(-50%, -50%);
+  width: 44.5%;
+  height: 32.5%;
+  border-radius: 6px;
   overflow: hidden;
-  z-index: 5;
-  background: transparent;
+  background: rgba(0, 0, 0, 0.25);
+  box-shadow: inset 0 0 28px rgba(0, 0, 0, 0.65);
 }
+
+/* Debug:
+.res-visualizer-screen {
+  outline: 2px solid rgba(255, 0, 0, 0.6);
+  background: rgba(255, 0, 0, 0.08);
+}
+*/
 
 .res-print-internal {
   width: 100%;
   height: 100%;
-  object-fit: contain;
-  display: block;
+  object-fit: cover;
+  filter: contrast(1.05) saturate(1.08);
 }
 
-/* Logged-in visualizer (keep: you said it’s perfect) */
-.vs-li {
-  top: 25.0%;
-  left: 33.5%;
-  width: 33.0%;
-  height: 40.0%;
-}
-
-/* Logged-out visualizer (tuned so it sits inside the monitor and stays off the buttons) */
-.vs-lo {
-  top: 22.0%;
-  left: 33.5%;
-  width: 33.0%;
-  height: 36.0%;
-}
-
-/* Hotspot layer */
+/* Hotspots layer */
 .res-interactive-layer {
   position: absolute;
   inset: 0;
-  z-index: 30;
+  z-index: 5;
 }
 
+/* Base hotspot */
 .hs {
   position: absolute;
-  background: transparent !important;
-  border: none !important;
-  cursor: pointer;
+  transform: translate(-50%, -50%);
+  background: rgba(255, 0, 0, 0); /* set to 0.25 for calibration */
+  border: none;
   padding: 0;
+  cursor: pointer;
 }
 
-/* ---------------- LOGGED OUT (NEW ART: 3 buttons) ---------------- */
-/* Center stack: Google, Discord, Replay Ritual */
+/* -------- Logged Out -------- */
 
-.hs-google  { top: 66.0%; left: 33.5%; width: 33.0%; height: 6.2%; }
-.hs-discord { top: 74.0%; left: 33.5%; width: 33.0%; height: 6.2%; }
-.hs-replay-lo { top: 82.0%; left: 33.5%; width: 33.0%; height: 7.5%; }
+/* LOGIN with DISCORD */
+.hs-discord {
+  left: 50%;
+  top: 71.6%;
+  width: 18%;
+  height: 5.8%;
+}
 
-/* ---------------- LOGGED IN (UNCHANGED / WORKING) ---------------- */
+/* RETURN HOME (logged out) */
+.hs-home-lo {
+  left: 50%;
+  top: 79.2%;
+  width: 12%;
+  height: 4.6%;
+}
 
-.hs-download   { top: 71.5%; left: 18.5%; width: 30.5%; height: 8.8%; }
-.hs-save       { top: 71.5%; left: 51.0%; width: 30.5%; height: 8.8%; }
-.hs-replay-li  { top: 84.0%; left: 19.0%; width: 19.0%; height: 6.5%; }
-.hs-home-li    { top: 84.0%; left: 40.5%; width: 19.0%; height: 6.5%; }
-.hs-signout-li { top: 84.0%; left: 62.0%; width: 19.0%; height: 6.5%; }
+/* -------- Logged In -------- */
 
-/* Debug (optional): turn on to see hit areas */
-/*
-.hs { background: rgba(255, 0, 0, 0.25) !important; }
-*/
+/* DOWNLOAD VIDEO */
+.hs-download {
+  left: 50%;
+  top: 71.6%;
+  width: 20%;
+  height: 6.0%;
+}
+
+/* RETURN HOME (logged in - left button) */
+.hs-home-li {
+  left: 43.2%;
+  top: 80.6%;
+  width: 14%;
+  height: 4.8%;
+}
+
+/* SIGN OUT (logged in - right button) */
+.hs-signout-li {
+  left: 56.8%;
+  top: 80.6%;
+  width: 14%;
+  height: 4.8%;
+}

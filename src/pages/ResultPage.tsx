@@ -67,13 +67,11 @@ const RECOVERY_BLOB_KEY = 'res_recovery_blob';
 const RECOVERY_PRINT_KEY = 'res_recovery_print';
 
 /** -------- Filename helpers -------- */
-
 function sanitizeBaseName(name: string): string {
-  // remove extension and anything weird for file systems
   return name
-    .replace(/\.[^/.]+$/, '') // strip extension
-    .replace(/[^a-z0-9]+/gi, '_') // only letters, numbers, underscores
-    .replace(/^_+|_+$/g, ''); // trim underscores
+    .replace(/\.[^/.]+$/, '')
+    .replace(/[^a-z0-9]+/gi, '_')
+    .replace(/^_+|_+$/g, '');
 }
 
 function buildSessionFileName(file?: File | null): string {
@@ -84,23 +82,21 @@ function buildSessionFileName(file?: File | null): string {
     return `${prefix}${base}.webm`;
   }
 
-  // Fallback: custom short timestamp, e.g. 260122154 for 2026‑01‑22 15:04
   const now = new Date();
-  const yy = String(now.getFullYear()).slice(-2);           // 26
-  const mm = String(now.getMonth() + 1).padStart(2, '0');   // 01..12
-  const dd = String(now.getDate()).padStart(2, '0');        // 01..31
-  const hh = String(now.getHours()).padStart(2, '0');       // 00..23
-  const min = String(now.getMinutes()).padStart(1, '0');    // 0..59 (no leading 0 if you want 154 vs 1504)
+  const yy = String(now.getFullYear()).slice(-2);
+  const mm = String(now.getMonth() + 1).padStart(2, '0');
+  const dd = String(now.getDate()).padStart(2, '0');
+  const hh = String(now.getHours()).padStart(2, '0');
+  const min = String(now.getMinutes()).padStart(2, '0');
+  const stamp = `${yy}${mm}${dd}${hh}${min}`;
 
-  const stamp = `${yy}${mm}${dd}${hh}${min}`;               // -> "260122154"
   return `${prefix}${stamp}.webm`;
 }
 
 /** -------- Component -------- */
-
 const ResultPage: React.FC = () => {
   const navigate = useNavigate();
-  const { state, ritual, auth, savePerformance, signOut, reset } = useApp();
+  const { state, ritual, auth, signOut, reset } = useApp();
   const { trackEvent } = useAnalytics();
 
   const [recoveredPrint, setRecoveredPrint] = useState<string | null>(null);
@@ -125,15 +121,18 @@ const ResultPage: React.FC = () => {
   const getRedirectUrl = () => window.location.origin + '/auth/callback';
 
   const safePersistAndRedirect = useCallback(
-    async (provider: 'google' | 'discord') => {
+    async (provider: 'discord') => {
       trackEvent('social_login_attempt', { provider });
 
-      // persist sound print
+      // Tell callback where to return
+      sessionStorage.setItem('post-auth-redirect', '/result');
+
+      // Persist sound print
       if (ritual.soundPrintDataUrl) {
         sessionStorage.setItem(RECOVERY_PRINT_KEY, ritual.soundPrintDataUrl);
       }
 
-      // persist recorded session (video/webm)
+      // Persist recorded session (video/webm) via IndexedDB
       if (state.recordingBlob) {
         try {
           await saveBlob(RECOVERY_BLOB_KEY, state.recordingBlob);
@@ -147,12 +146,13 @@ const ResultPage: React.FC = () => {
         options: { redirectTo: getRedirectUrl() },
       });
     },
-    [ritual.soundPrintDataUrl, state.recordingBlob, trackEvent]
+    [ritual.soundPrintDataUrl, state.recordingBlob, trackEvent],
   );
 
   const downloadSession = useCallback(() => {
     const activeBlob = state.recordingBlob || recoveredBlob;
-    if (!auth.user || !activeBlob) {
+
+    if (!activeBlob) {
       alert('No recording data found. Please try the ritual again.');
       return;
     }
@@ -170,26 +170,7 @@ const ResultPage: React.FC = () => {
     URL.revokeObjectURL(url);
 
     trackEvent('download_session', { type: activeBlob.type || 'video/webm', fileName });
-  }, [auth.user, recoveredBlob, state.file, state.recordingBlob, trackEvent]);
-
-  const handleSave = useCallback(async () => {
-    if (!auth.user) return;
-
-    const trackName = state.file?.name || 'Unknown Track';
-    const trackHash = btoa(state.file?.name || '') + '-' + state.file?.size;
-
-    await savePerformance(ritual.finalEQState, trackName, trackHash);
-    trackEvent('save_performance', { userId: auth.user.id });
-    alert('Saved to library.');
-  }, [auth.user, ritual.finalEQState, savePerformance, state.file, trackEvent]);
-
-  const replay = useCallback(() => {
-    trackEvent('ritual_replay');
-    sessionStorage.removeItem(RECOVERY_PRINT_KEY);
-    deleteBlob(RECOVERY_BLOB_KEY).catch(() => {});
-    reset();
-    navigate('/instrument');
-  }, [navigate, reset, trackEvent]);
+  }, [recoveredBlob, state.file, state.recordingBlob, trackEvent]);
 
   const goHome = useCallback(() => {
     sessionStorage.removeItem(RECOVERY_PRINT_KEY);
@@ -212,34 +193,30 @@ const ResultPage: React.FC = () => {
           src={isLoggedIn ? loggedInSkin : loggedOutSkin}
           className="res-background-image"
           alt=""
+          draggable={false}
         />
 
-        <div className="res-email-overlay">
-          {auth.isLoading ? 'SYNCING...' : isLoggedIn ? `LOGGED IN: ${auth.user?.email}` : ''}
-        </div>
-
-        {/* Visualizer area (different placement for LO vs LI) */}
-        <div className={`res-visualizer-screen ${isLoggedIn ? 'vs-li' : 'vs-lo'}`}>
-          {currentPrint && (
-            <img src={currentPrint} className="res-print-internal" alt="Sound Print" />
-          )}
+        {/* Monitor area */}
+        <div className="res-visualizer-screen">
+          {currentPrint && <img src={currentPrint} className="res-print-internal" alt="Sound Print" />}
         </div>
 
         {/* Invisible hotspots */}
         <div className="res-interactive-layer">
           {isLoggedIn ? (
             <>
-              <button className="hs hs-download" onClick={downloadSession} />
-              <button className="hs hs-save" onClick={handleSave} />
-              <button className="hs hs-replay-li" onClick={replay} />
-              <button className="hs hs-home-li" onClick={goHome} />
-              <button className="hs hs-signout-li" onClick={handleSignOut} />
+              <button className="hs hs-download" onClick={downloadSession} aria-label="Download Video" />
+              <button className="hs hs-home-li" onClick={goHome} aria-label="Return Home" />
+              <button className="hs hs-signout-li" onClick={handleSignOut} aria-label="Sign Out" />
             </>
           ) : (
             <>
-              <button className="hs hs-google" onClick={() => safePersistAndRedirect('google')} />
-              <button className="hs hs-discord" onClick={() => safePersistAndRedirect('discord')} />
-              <button className="hs hs-replay-lo" onClick={replay} />
+              <button
+                className="hs hs-discord"
+                onClick={() => safePersistAndRedirect('discord')}
+                aria-label="Login with Discord"
+              />
+              <button className="hs hs-home-lo" onClick={goHome} aria-label="Return Home" />
             </>
           )}
         </div>

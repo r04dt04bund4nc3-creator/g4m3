@@ -1,35 +1,50 @@
 // src/pages/AuthCallbackPage.tsx
-import { useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabaseClient';
 
 export default function AuthCallbackPage() {
-  const navigate = useNavigate();
+  const [msg, setMsg] = useState('Finalizing login...');
 
   useEffect(() => {
-    const handleCallback = async () => {
+    let cancelled = false;
+
+    const run = async () => {
       try {
-        // Exchange the OAuth code for a session
-        const { error } = await supabase.auth.getSession();
-        if (error) throw error;
+        const url = new URL(window.location.href);
+        const hasCode = !!url.searchParams.get('code');
 
-        // Clean up the URL (remove #access_token=...)
-        window.history.replaceState({}, '', '/auth/callback');
+        if (hasCode) {
+          const { error } = await supabase.auth.exchangeCodeForSession(window.location.href);
+          if (error) throw error;
+        } else {
+          // fallback
+          const { error } = await supabase.auth.getSession();
+          if (error) throw error;
+        }
 
-        // Redirect to /result after a tiny delay (ensures session is persisted)
-        setTimeout(() => navigate('/result', { replace: true }), 50);
-      } catch (err) {
-        console.error('Auth callback failed:', err);
-        navigate('/'); // Fallback to home on error
+        if (cancelled) return;
+
+        const dest = sessionStorage.getItem('post-auth-redirect') || '/result';
+        sessionStorage.removeItem('post-auth-redirect');
+
+        window.location.replace(dest);
+      } catch (e: any) {
+        console.error(e);
+        if (cancelled) return;
+        setMsg(`Login failed: ${e?.message ?? 'unknown error'}`);
+        setTimeout(() => window.location.replace('/'), 1200);
       }
     };
 
-    handleCallback();
-  }, [navigate]);
+    run();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   return (
-    <div style={{ background: '#050810', minHeight: '100vh', color: 'white', padding: '2rem' }}>
-      <p>Finalizing login...</p>
+    <div style={{ minHeight: '100dvh', background: '#050810', color: '#fff', padding: 24 }}>
+      <div style={{ opacity: 0.85 }}>{msg}</div>
     </div>
   );
 }
