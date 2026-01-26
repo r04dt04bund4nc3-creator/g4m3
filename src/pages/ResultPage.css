@@ -27,84 +27,78 @@
   pointer-events: none;
 }
 
-/* MONITOR AREA */
+/* ---- MONITOR AREA (Calibrated Down) ---- */
 .res-visualizer-screen {
   position: absolute;
-  left: 50%;
-  top: 41.5%;
+  left: 50.1%;
+  top: 48.2%; /* Nudged down from 41.5% */
   transform: translate(-50%, -50%);
-  width: 44.5%;
+  width: 44.2%;
   height: 32.5%;
-  border-radius: 6px;
+  border-radius: 4px;
   overflow: hidden;
-  background: rgba(0, 0, 0, 0.25);
-  box-shadow: inset 0 0 28px rgba(0, 0, 0, 0.65);
+  background: rgba(0, 0, 0, 0.4);
+  box-shadow: inset 0 0 40px rgba(0, 0, 0, 0.9);
 }
 
 .res-print-internal {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  filter: contrast(1.05) saturate(1.08);
+  mix-blend-mode: screen; /* Makes colors pop against the black monitor */
+  filter: contrast(1.1) saturate(1.1);
 }
 
-/* Hotspots layer */
 .res-interactive-layer {
   position: absolute;
   inset: 0;
   z-index: 5;
 }
 
-/* Base hotspot */
 .hs {
   position: absolute;
   transform: translate(-50%, -50%);
-  background: rgba(255, 0, 0, 0); /* change to 0.25 temporarily to see boxes */
+  background: rgba(255, 0, 0, 0); /* Set to 0.3 to see the hitboxes */
   border: none;
   padding: 0;
   cursor: pointer;
 }
 
-/* -------- Logged Out -------- */
+/* -------- Logged Out Hotspots -------- */
 
-/* LOGIN with DISCORD  (shifted DOWN) */
 .hs-discord {
   left: 50%;
-  top: 74.0%;
-  width: 18%;
-  height: 5.8%;
+  top: 76.5%; /* Nudged down */
+  width: 19%;
+  height: 6.5%;
 }
 
-/* RETURN HOME (logged out) (shifted DOWN) */
 .hs-home-lo {
   left: 50%;
-  top: 81.6%;
-  width: 12%;
-  height: 4.6%;
+  top: 84.8%; /* Nudged down */
+  width: 13%;
+  height: 5%;
 }
 
-/* -------- Logged In -------- */
+/* -------- Logged In Hotspots -------- */
 
-/* DOWNLOAD VIDEO (shifted DOWN) */
 .hs-download {
   left: 50%;
-  top: 74.0%;
-  width: 20%;
-  height: 6.0%;
+  top: 76.5%; /* Nudged down */
+  width: 21%;
+  height: 6.8%;
 }
 
-/* RETURN HOME (logged in - left button) (shifted DOWN) */
 .hs-home-li {
-  left: 43.2%;
-  top: 83.0%;
-  width: 14%;
-  height: 4.8%;
+  left: 43.1%;
+  top: 86.2%; /* Nudged down */
+  width: 15%;
+  height: 5.5%;
 }
 
-/* SIGN OUT (logged in - right button) (shifted DOWN) */
 .hs-signout-li {
-  left: 56.8%;
-  top: 83.0%;
-  width: 14%;
-  height: 4.8%;
+  left: 57.1%;
+  top: 86.2%; /* Nudged down */
+  width: 15%;
+  height: 5.5%;
 }
