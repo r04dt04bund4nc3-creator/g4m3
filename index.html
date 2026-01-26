@@ -4,15 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>g4m3</title>
-  <script>
-    window.onerror = function(message, source, lineno, colno, error) {
-        var errorDiv = document.createElement("div");
-            errorDiv.style.cssText = "position:fixed; top:0; left:0; width:100%; height:100%; background:white; color:red; z-index:9999; padding:20px; font-size:20px; white-space:pre-wrap; overflow:auto;";
-                errorDiv.textContent = "🚨 CRASH REPORT:\n\n" + message + "\n\nSource: " + source + ":" + lineno;
-                    document.body.appendChild(errorDiv);
-                      };
-                      </script>
-                    </head>
+  </head>
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
