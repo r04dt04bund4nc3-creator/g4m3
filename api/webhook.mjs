@@ -1,21 +1,16 @@
-const Stripe = require('stripe');
-const { createClient } = require('@supabase/supabase-js');
+import Stripe from 'stripe';
+import { createClient } from '@supabase/supabase-js';
 
-let stripe;
-try {
-  stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
-    apiVersion: '2023-10-16',
-  });
-} catch (err) {
-  console.error('Stripe init failed in webhook:', err.message);
-}
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
+  apiVersion: '2023-10-16',
+});
 
 const supabase = createClient(
   process.env.SUPABASE_URL, 
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
-module.exports.config = {
+export const config = {
   api: {
     bodyParser: false,
   },
@@ -29,7 +24,7 @@ async function buffer(readable) {
   return Buffer.concat(chunks);
 }
 
-module.exports = async (req, res) => {
+export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
@@ -47,7 +42,7 @@ module.exports = async (req, res) => {
 
     event = stripe.webhooks.constructEvent(buf, sig, webhookSecret);
   } catch (err) {
-    console.error('Webhook signature verification failed:', err.message);
+    console.error('Webhook signature failed:', err.message);
     return res.status(400).send(`Webhook Error: ${err.message}`);
   }
 
@@ -57,7 +52,7 @@ module.exports = async (req, res) => {
     const tier = session.metadata?.tier;
 
     if (!userId || !tier) {
-      console.warn('Missing userId or tier in session', { userId, tier });
+      console.warn('Missing userId or tier', { userId, tier });
       return res.status(200).json({ received: true });
     }
 
@@ -67,20 +62,16 @@ module.exports = async (req, res) => {
         .update({ 
           subscription_status: 'active',
           subscription_tier: tier,
-          current_period_end: session.subscription 
-            ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
-            : null
         })
         .eq('user_id', userId);
 
       if (error) throw error;
-
-      console.log('Updated user streak for', userId, 'with tier', tier);
+      console.log('Updated subscription for', userId);
     } catch (dbErr) {
-      console.error('Database update failed:', dbErr);
+      console.error('DB update failed:', dbErr);
       return res.status(500).send('Database update failed');
     }
   }
 
   res.status(200).json({ received: true });
-};
+}

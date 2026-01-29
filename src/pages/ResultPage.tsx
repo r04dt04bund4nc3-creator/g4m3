@@ -63,25 +63,26 @@ type StreakState = {
   subscriptionActive: boolean;
 };
 
-// Timing constants
-const REVEAL_DELAY_MS = 2000; // 2 seconds before tap is allowed
-const ANNUAL_READING_TIME_MS = 30000; // 30 seconds to read annual offer
+// Timing
+const REVEAL_DELAY_MS = 2000;
+const MONTHLY_TIMEOUT_MS = 20000; // 20s to read then auto-hub
+const ANNUAL_TIMEOUT_MS = 30000;  // 30s to read then auto-hub
 
-// Sacred copy - shorter, clearer, value-first
+// Standalone copy for both paths
 const PRIZE_TEXTS = {
   6: {
     title: 'MONTHLY KEEPER',
     headline: '$6/month · 1 NFT per month',
-    body: 'Unlock the 216-artifact archive. Each month, claim one NFT at no extra cost. Artifact values rise monthly: #1 is $6, #216 is $1,296. Twelve months = $468 in claim value.',
-    scarcity: 'Supply tightens: 216 mints → 215 → ... → 1.',
-    cta: 'TAP TO SUBSCRIBE',
+    body: 'Claim one NFT each month. Total claim value over 12 months: $468, $2808 in two years, $16,848 in three years.',
+    scarcity: 'Each new artifact is rarer than the last: 216 mints for NFT #1 → 1 mint of NFT #216.',
+    cta: 'Get there first! TAP to lock in your position.',
   },
   3: {
     title: 'ANNUAL ARCHIVIST',
-    headline: '$36/year · The Big Deal',
+    headline: '$3/month · 1 NFT per month',
     body: 'Access the full 216-artifact archive for one year. Claim one NFT each month. Total claim value over 12 months: $468, $2808 in two years, $16,848 in three years.',
-    scarcity: 'Each artifact is rarer than the last: 216 mints for NFT #1 → 1 mint of NFT #216. Get there first!',
-    cta: 'TAP TO BUILD',
+    scarcity: 'Each new artifact is rarer than the last: 216 mints for NFT #1 → 1 mint of NFT #216.',
+    cta: 'Get there first! TAP to lock in your position.',
   },
 };
 
@@ -133,7 +134,7 @@ const ResultPage: React.FC = () => {
     }
   }, [location.search]);
 
-  // Recover blobs/prints
+  // Recover blobs
   useEffect(() => {
     const run = async () => {
       const savedPrint = sessionStorage.getItem(RECOVERY_PRINT_KEY);
@@ -144,25 +145,33 @@ const ResultPage: React.FC = () => {
     run();
   }, []);
 
-  // Prize reveal timer (2s delay before clickable)
+  // Reveal timer (2s before clickable)
   useEffect(() => {
     if (view.startsWith('prize-')) {
       setCanProceed(false);
-      const timer = setTimeout(() => setCanProceed(true), REVEAL_DELAY_MS);
-      return () => clearTimeout(timer);
+      const t = setTimeout(() => setCanProceed(true), REVEAL_DELAY_MS);
+      return () => clearTimeout(t);
     }
   }, [view]);
 
-  // Annual auto-resolve: 30s AFTER reveal is complete
+  // Monthly auto-resolve to hub (NEW)
+  useEffect(() => {
+    if (view !== 'prize-6' || !canProceed) return;
+    const t = setTimeout(() => {
+      setView('hub');
+      trackEvent('subscription_timeout', { tier: 'monthly' });
+    }, MONTHLY_TIMEOUT_MS);
+    return () => clearTimeout(t);
+  }, [view, canProceed, trackEvent]);
+
+  // Annual auto-resolve to hub
   useEffect(() => {
     if (view !== 'prize-3' || !canProceed) return;
-    
-    const timer = setTimeout(() => {
+    const t = setTimeout(() => {
       setView('hub');
       trackEvent('subscription_timeout', { tier: 'annual' });
-    }, ANNUAL_READING_TIME_MS);
-    
-    return () => clearTimeout(timer);
+    }, ANNUAL_TIMEOUT_MS);
+    return () => clearTimeout(t);
   }, [view, canProceed, trackEvent]);
 
   // Fetch streak
@@ -282,7 +291,7 @@ const ResultPage: React.FC = () => {
     }
   };
 
-  // Stripe checkout via Vercel function
+  // Stripe checkout with defensive error handling
   const handleStripeCheckout = useCallback(
     async (tier: 'prize-6' | 'prize-3') => {
       if (!auth.user?.id) {
@@ -295,7 +304,6 @@ const ResultPage: React.FC = () => {
       trackEvent('stripe_checkout_initiated', { tier });
 
       try {
-        // Use window.location.origin so it works on preview deploys too
         const endpoint = `${window.location.origin}/api/create-checkout`;
         
         const res = await fetch(endpoint, {
@@ -308,13 +316,24 @@ const ResultPage: React.FC = () => {
           }),
         });
 
-        const json = await res.json();
+        // Handle non-JSON responses (like HTML error pages)
+        const contentType = res.headers.get('content-type');
+        let json;
         
-        if (!res.ok) {
-          throw new Error(json?.error || `Server error: ${res.status}`);
+        if (contentType && contentType.includes('application/json')) {
+          json = await res.json();
+        } else {
+          const text = await res.text();
+          throw new Error(text || `Server error: ${res.status}`);
         }
 
-        if (!json?.url) throw new Error('No checkout URL returned');
+        if (!res.ok) {
+          throw new Error(json?.error || `Request failed: ${res.status}`);
+        }
+
+        if (!json?.url) {
+          throw new Error('No checkout URL returned');
+        }
 
         window.location.href = json.url;
       } catch (err) {
@@ -413,9 +432,7 @@ const ResultPage: React.FC = () => {
         <div className="res-machine-container">
           <img src={imgSrc} className="res-background-image" alt="Prize" />
 
-          {tier === '0' && (
-            <div className="prize-shelf-text legacy">{dayText}</div>
-          )}
+          {tier === '0' && <div className="prize-shelf-text legacy">{dayText}</div>}
 
           {textData && (
             <div className="prize-shelf-text sacred-text-container">
@@ -425,7 +442,12 @@ const ResultPage: React.FC = () => {
               <p className="sacred-scarcity">{textData.scarcity}</p>
               {tier === '3' && canProceed && (
                 <div className="auto-redirect-warning">
-                  Auto-returning in {Math.round(ANNUAL_READING_TIME_MS / 1000)}s...
+                  Returning to hub in {Math.round(ANNUAL_TIMEOUT_MS / 1000)}s...
+                </div>
+              )}
+              {tier === '6' && canProceed && (
+                <div className="auto-redirect-warning">
+                  Returning to hub in {Math.round(MONTHLY_TIMEOUT_MS / 1000)}s...
                 </div>
               )}
               <div className="sacred-cta">

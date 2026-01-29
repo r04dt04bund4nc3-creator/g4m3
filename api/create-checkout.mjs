@@ -1,17 +1,11 @@
-const Stripe = require('stripe');
+import Stripe from 'stripe';
 
-// Initialize Stripe with env var
-let stripe;
-try {
-  stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
-    apiVersion: '2023-10-16',
-  });
-} catch (err) {
-  console.error('Stripe initialization failed:', err.message);
-}
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
+  apiVersion: '2023-10-16',
+});
 
-module.exports = async (req, res) => {
-  // Health check: if GET, return status
+export default async function handler(req, res) {
+  // Health check
   if (req.method === 'GET') {
     return res.status(200).json({
       status: 'OK',
@@ -19,13 +13,10 @@ module.exports = async (req, res) => {
         STRIPE_SECRET_KEY: !!process.env.STRIPE_SECRET_KEY,
         STRIPE_PRICE_MONTHLY: !!process.env.STRIPE_PRICE_MONTHLY,
         STRIPE_PRICE_ANNUAL: !!process.env.STRIPE_PRICE_ANNUAL,
-        SUPABASE_URL: !!process.env.SUPABASE_URL,
-        SUPABASE_SERVICE_ROLE_KEY: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
       },
     });
   }
 
-  // Only allow POST
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
@@ -33,16 +24,13 @@ module.exports = async (req, res) => {
   try {
     const { tier, return_url, user_id } = req.body;
 
-    // Validate inputs
     if (!tier || !return_url || !user_id) {
-      throw new Error('Missing required fields: tier, return_url, user_id');
+      throw new Error('Missing required fields');
     }
 
     const priceId = tier === 'prize-6' 
       ? process.env.STRIPE_PRICE_MONTHLY 
-      : tier === 'prize-3' 
-        ? process.env.STRIPE_PRICE_ANNUAL 
-        : null;
+      : process.env.STRIPE_PRICE_ANNUAL;
 
     if (!priceId) {
       throw new Error(`Price ID not configured for tier: ${tier}`);
@@ -61,7 +49,6 @@ module.exports = async (req, res) => {
     return res.status(200).json({ url: session.url });
   } catch (err) {
     console.error('Checkout error:', err);
-    // Return plain text error so frontend doesn't crash on invalid JSON
-    return res.status(400).send(err.message || 'Unknown server error');
+    return res.status(400).json({ error: err.message });
   }
-};
+}
