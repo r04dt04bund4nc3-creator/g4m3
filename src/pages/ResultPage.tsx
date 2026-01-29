@@ -63,41 +63,25 @@ type StreakState = {
   subscriptionActive: boolean;
 };
 
-// IMPORTANT: Stripe Price IDs (not product IDs)
-const STRIPE_PRICE_MONTHLY = 'price_1SunwRDYxdzhldrSrgIKqUV6';
-const STRIPE_PRICE_ANNUAL = 'price_1SuoAmDYxdzhldrS6iMLinDk';
+// Timing constants
+const REVEAL_DELAY_MS = 2000; // 2 seconds before tap is allowed
+const ANNUAL_READING_TIME_MS = 30000; // 30 seconds to read annual offer
 
-// Vercel function endpoint (relative path)
-const CHECKOUT_FN_URL = '/api/create-checkout';
-
-// SACRED TEXT CONTENT
+// Sacred copy - shorter, clearer, value-first
 const PRIZE_TEXTS = {
   6: {
-    title: 'THE MONTHLY KEEPER',
-    body:
-      '216 artifacts. Each month, one is reserved for you to claim.\n' +
-      'The first begins at $6. Each month rises by $6.\n' +
-      "Twelve months yields $468 of artifact value.\n\n" +
-      'The record is finite: the first artifact has 216 copies.\n' +
-      'Each new artifact is minted one fewer time… until the 216th exists as ONE.',
-    value: 'Monthly Offering: $6/mo · 12 Claims/Year',
-    cta: 'TAP ANYWHERE TO SUBSCRIBE',
-    priceId: STRIPE_PRICE_MONTHLY,
-    tier: 'prize-6' as const,
+    title: 'MONTHLY KEEPER',
+    headline: '$6/month · 1 NFT per month',
+    body: 'Unlock the 216-artifact archive. Each month, claim one NFT at no extra cost. Artifact values rise monthly: #1 is $6, #216 is $1,296. Twelve months = $468 in claim value.',
+    scarcity: 'Supply tightens: 216 mints → 215 → ... → 1.',
+    cta: 'TAP TO SUBSCRIBE',
   },
   3: {
-    title: 'THE ETERNAL ARCHIVIST',
-    body:
-      'Same 216 artifacts. Same 12 monthly claims.\n' +
-      'The first begins at $6. Each month rises by $6.\n' +
-      "Twelve months yields $468 of artifact value.\n\n" +
-      'Seal the year at half the monthly cost.\n' +
-      'Annual Offering: $36 total (equivalent to $3/mo).',
-    value: 'Annual Offering: $36/yr · Best Path',
-    cta: 'TAP ANYWHERE TO SEAL THE YEAR',
-    priceId: STRIPE_PRICE_ANNUAL,
-    tier: 'prize-3' as const,
-    autoRedirectDelay: 12000,
+    title: 'ANNUAL ARCHIVIST',
+    headline: '$36/year (50% off) · Best Value',
+    body: 'Same monthly NFT claims. Pay once for the year—equivalent to $3/month. Twelve months = $468 in claim value. Save $36 vs monthly.',
+    scarcity: 'Supply tightens: 216 mints → 215 → ... → 1.',
+    cta: 'TAP TO SEAL THE YEAR',
   },
 };
 
@@ -113,8 +97,7 @@ const ResultPage: React.FC = () => {
   const [canProceed, setCanProceed] = useState(false);
   const [loadingStreak, setLoadingStreak] = useState(false);
   const [claiming, setClaiming] = useState(false);
-
-  // “Sacred Confirmation”
+  const [checkoutBusy, setCheckoutBusy] = useState(false);
   const [isConfirmed, setIsConfirmed] = useState(false);
   const [subscriptionTier, setSubscriptionTier] = useState<string | null>(null);
 
@@ -127,7 +110,7 @@ const ResultPage: React.FC = () => {
 
   const isLoggedIn = !!auth.user?.id;
 
-  /** Handle return from Stripe (success / canceled) */
+  // Handle Stripe return
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     const success = params.get('success') === 'true';
@@ -138,56 +121,62 @@ const ResultPage: React.FC = () => {
       setSubscriptionTier(tier || 'unknown');
       setIsConfirmed(true);
       setView('hub');
-
-      // clear the query so refresh doesn't re-trigger
       setTimeout(() => {
-        try {
-          window.history.replaceState({}, '', '/result');
-        } catch {}
+        try { window.history.replaceState({}, '', '/result'); } catch {}
       }, 1500);
-
       setTimeout(() => setIsConfirmed(false), 4000);
     }
 
     if (canceled) {
-      try {
-        window.history.replaceState({}, '', '/result');
-      } catch {}
+      try { window.history.replaceState({}, '', '/result'); } catch {}
       setView('summary');
     }
   }, [location.search]);
 
-  /** prize screens: delay before allowing tap */
+  // Recover blobs/prints
+  useEffect(() => {
+    const run = async () => {
+      const savedPrint = sessionStorage.getItem(RECOVERY_PRINT_KEY);
+      if (savedPrint) setRecoveredPrint(savedPrint);
+      const blob = await loadBlob(RECOVERY_BLOB_KEY);
+      if (blob) setRecoveredBlob(blob);
+    };
+    run();
+  }, []);
+
+  // Prize reveal timer (2s delay before clickable)
   useEffect(() => {
     if (view.startsWith('prize-')) {
       setCanProceed(false);
-      const timer = setTimeout(() => setCanProceed(true), 2000);
+      const timer = setTimeout(() => setCanProceed(true), REVEAL_DELAY_MS);
       return () => clearTimeout(timer);
     }
   }, [view]);
 
-  /** Annual: auto-resolve to hub if user doesn't tap */
+  // Annual auto-resolve: 30s AFTER reveal is complete
   useEffect(() => {
-    if (view !== 'prize-3') return;
-    const timer = setTimeout(() => setView('hub'), PRIZE_TEXTS[3].autoRedirectDelay);
+    if (view !== 'prize-3' || !canProceed) return;
+    
+    const timer = setTimeout(() => {
+      setView('hub');
+      trackEvent('subscription_timeout', { tier: 'annual' });
+    }, ANNUAL_READING_TIME_MS);
+    
     return () => clearTimeout(timer);
-  }, [view]);
+  }, [view, canProceed, trackEvent]);
 
-  /** Fetch streak from Supabase */
+  // Fetch streak
   const fetchStreak = useCallback(async () => {
     if (!auth.user?.id) return;
-
     setLoadingStreak(true);
     try {
       const today = new Date().toISOString().split('T')[0];
-
       let { data, error } = await supabase
         .from('user_streaks')
         .select('*')
         .eq('user_id', auth.user.id)
         .single();
 
-      // Create row if missing
       if (error && (error as any).code === 'PGRST116') {
         const { data: newData, error: insertError } = await supabase
           .from('user_streaks')
@@ -209,13 +198,11 @@ const ResultPage: React.FC = () => {
         const now = new Date();
         const diffTime = Math.abs(now.getTime() - lastVisit.getTime());
         const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-
         let newDay = data.current_day;
 
         if (data.last_visit !== today) {
           if (diffDays === 1) newDay = Math.min(data.current_day + 1, 6);
           else if (diffDays > 1) newDay = 1;
-
           await supabase
             .from('user_streaks')
             .update({
@@ -225,7 +212,6 @@ const ResultPage: React.FC = () => {
             })
             .eq('user_id', auth.user.id);
         }
-
         data.current_day = newDay;
       }
 
@@ -246,34 +232,18 @@ const ResultPage: React.FC = () => {
     if (auth.user?.id) fetchStreak();
   }, [auth.user?.id, fetchStreak]);
 
-  /** Recover print/blob if needed */
-  useEffect(() => {
-    const run = async () => {
-      const savedPrint = sessionStorage.getItem(RECOVERY_PRINT_KEY);
-      if (savedPrint) setRecoveredPrint(savedPrint);
-      const blob = await loadBlob(RECOVERY_BLOB_KEY);
-      if (blob) setRecoveredBlob(blob);
-    };
-    run();
-  }, []);
-
   const effectiveBlob = state.recordingBlob ?? recoveredBlob ?? null;
+  const currentPrint = ritual.soundPrintDataUrl || recoveredPrint;
 
   const handleSocialLogin = useCallback(
     async (provider: 'discord' | 'google') => {
       trackEvent('social_login_attempt', { provider });
-
       if (state.recordingBlob) {
-        try {
-          await saveBlob(RECOVERY_BLOB_KEY, state.recordingBlob);
-        } catch (e) {
-          console.warn(e);
-        }
+        try { await saveBlob(RECOVERY_BLOB_KEY, state.recordingBlob); } catch (e) { console.warn(e); }
       }
       if (ritual.soundPrintDataUrl) {
         sessionStorage.setItem(RECOVERY_PRINT_KEY, ritual.soundPrintDataUrl);
       }
-
       if (provider === 'discord') await signInWithDiscord();
       else await signInWithGoogle();
     },
@@ -285,7 +255,6 @@ const ResultPage: React.FC = () => {
       alert('No recording found. Please try the ritual again.');
       return;
     }
-
     const url = URL.createObjectURL(effectiveBlob);
     const a = document.createElement('a');
     a.href = url;
@@ -294,7 +263,6 @@ const ResultPage: React.FC = () => {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-
     trackEvent('download_and_spin');
     setView('slots');
   }, [effectiveBlob, trackEvent]);
@@ -305,7 +273,7 @@ const ResultPage: React.FC = () => {
     try {
       await claimRitualArtifact(auth.user.id);
       await supabase.from('user_streaks').update({ nft_claimed: true }).eq('user_id', auth.user.id);
-      setStreak((prev) => ({ ...prev, nftClaimed: true }));
+      setStreak(prev => ({ ...prev, nftClaimed: true }));
       trackEvent('nft_claimed', { day: 6 });
     } catch (e) {
       console.error(e);
@@ -314,37 +282,49 @@ const ResultPage: React.FC = () => {
     }
   };
 
-  /** Stripe Checkout: calls Vercel Serverless Function */
+  // Stripe checkout via Vercel function
   const handleStripeCheckout = useCallback(
     async (tier: 'prize-6' | 'prize-3') => {
       if (!auth.user?.id) {
         alert('You must be logged in to subscribe.');
         return;
       }
+      if (checkoutBusy) return;
 
+      setCheckoutBusy(true);
       trackEvent('stripe_checkout_initiated', { tier });
 
       try {
-        const res = await fetch(CHECKOUT_FN_URL, {
+        // Use window.location.origin so it works on preview deploys too
+        const endpoint = `${window.location.origin}/api/create-checkout`;
+        
+        const res = await fetch(endpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             tier,
-            user_id: auth.user.id, // Passed explicitly since we're not using JWT here
+            user_id: auth.user.id,
             return_url: `${window.location.origin}/result`,
           }),
         });
 
         const json = await res.json();
-        if (!res.ok) throw new Error(json?.error || 'Checkout failed');
+        
+        if (!res.ok) {
+          throw new Error(json?.error || `Server error: ${res.status}`);
+        }
+
+        if (!json?.url) throw new Error('No checkout URL returned');
 
         window.location.href = json.url;
       } catch (err) {
-        console.error('Stripe checkout error:', err);
-        alert('Failed to open checkout. Please try again.');
+        console.error('Checkout error:', err);
+        alert((err as Error).message || 'Failed to open checkout. Please try again.');
+      } finally {
+        setCheckoutBusy(false);
       }
     },
-    [auth.user?.id, trackEvent]
+    [auth.user?.id, checkoutBusy, trackEvent]
   );
 
   const goHome = useCallback(() => {
@@ -357,8 +337,6 @@ const ResultPage: React.FC = () => {
     navigate('/');
   }, [navigate, signOut]);
 
-  const currentPrint = ritual.soundPrintDataUrl || recoveredPrint;
-
   const dayText = useMemo(() => {
     if (loadingStreak) return 'ALIGNING PLANETARY GEARS...';
     if (streak.day === 6) {
@@ -368,7 +346,7 @@ const ResultPage: React.FC = () => {
     return `DAY ${streak.day} OF 6: RETURN TOMORROW TO STRENGTHEN THE SIGNAL.`;
   }, [streak, loadingStreak]);
 
-  /** HUB */
+  // HUB
   if (view === 'hub') {
     return (
       <div className={`res-page-root ${isConfirmed ? 'confirmed-state' : ''}`}>
@@ -382,9 +360,8 @@ const ResultPage: React.FC = () => {
                 <p>
                   The offering is received.
                   <br />
-                  The archive opens monthly.
-                  <br />
-                  {subscriptionTier ? `Tier: ${subscriptionTier}` : null}
+                  Monthly claims are now open.
+                  {subscriptionTier && <><br />Tier: {subscriptionTier}</>}
                 </p>
                 <button className="confirmation-cta" onClick={() => setIsConfirmed(false)}>
                   Continue
@@ -398,7 +375,7 @@ const ResultPage: React.FC = () => {
     );
   }
 
-  /** SLOTS */
+  // SLOTS
   if (view === 'slots') {
     return (
       <div className="res-page-root">
@@ -414,48 +391,46 @@ const ResultPage: React.FC = () => {
     );
   }
 
-  /** PRIZE RENDERER */
   const renderPrizeScreen = (tier: '6' | '3' | '0') => {
     const imgSrc = tier === '6' ? prize6 : tier === '3' ? prize3 : prize0;
-    const textData = tier === '6' ? PRIZE_TEXTS[6] : tier === '3' ? PRIZE_TEXTS[3] : null;
-
     const showClaimBtn = tier === '0' && streak.day === 6 && !streak.nftClaimed;
+    const textData = tier === '6' ? PRIZE_TEXTS[6] : tier === '3' ? PRIZE_TEXTS[3] : null;
 
     const handleClick = () => {
       if (!canProceed) return;
-
-      if (showClaimBtn) return; // claim button handles itself
-
+      if (showClaimBtn) return;
       if (tier === '6') return handleStripeCheckout('prize-6');
       if (tier === '3') return handleStripeCheckout('prize-3');
-
       setView('hub');
     };
 
     return (
-      <div className="res-page-root" onClick={handleClick} style={{ cursor: canProceed && !showClaimBtn ? 'pointer' : 'default' }}>
+      <div 
+        className="res-page-root" 
+        onClick={handleClick} 
+        style={{ cursor: canProceed && !showClaimBtn ? 'pointer' : 'default' }}
+      >
         <div className="res-machine-container">
           <img src={imgSrc} className="res-background-image" alt="Prize" />
 
-          {/* prize-0 legacy text */}
           {tier === '0' && (
             <div className="prize-shelf-text legacy">{dayText}</div>
           )}
 
-          {/* prize-6 / prize-3 sacred subscription text */}
           {textData && (
             <div className="prize-shelf-text sacred-text-container">
               <h2 className="sacred-title">{textData.title}</h2>
-              <p className="sacred-body">
-                {textData.body}
-                <span className="sacred-value-prop">{textData.value}</span>
-              </p>
-              {tier === '3' && (
+              <div className="sacred-headline">{textData.headline}</div>
+              <p className="sacred-body">{textData.body}</p>
+              <p className="sacred-scarcity">{textData.scarcity}</p>
+              {tier === '3' && canProceed && (
                 <div className="auto-redirect-warning">
-                  Returning to hub in {Math.round(PRIZE_TEXTS[3].autoRedirectDelay / 1000)}s…
+                  Auto-returning in {Math.round(ANNUAL_READING_TIME_MS / 1000)}s...
                 </div>
               )}
-              <div className="sacred-cta">{textData.cta}</div>
+              <div className="sacred-cta">
+                {checkoutBusy ? 'OPENING CHECKOUT...' : textData.cta}
+              </div>
             </div>
           )}
 
@@ -463,21 +438,12 @@ const ResultPage: React.FC = () => {
             <div className="claim-container">
               <button
                 className="manifold-claim-btn"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleClaim();
-                }}
+                onClick={(e) => { e.stopPropagation(); handleClaim(); }}
                 disabled={claiming}
               >
                 {claiming ? 'MINTING...' : 'CLAIM ARTIFACT'}
               </button>
-              <div
-                className="claim-subtext"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setView('hub');
-                }}
-              >
+              <div className="claim-subtext" onClick={(e) => { e.stopPropagation(); setView('hub'); }}>
                 or return to hub
               </div>
             </div>
@@ -495,12 +461,14 @@ const ResultPage: React.FC = () => {
   if (view === 'prize-3') return renderPrizeScreen('3');
   if (view === 'prize-6') return renderPrizeScreen('6');
 
-  /** SUMMARY */
+  // SUMMARY
   return (
     <div className="res-page-root">
       <div className="res-machine-container">
         <img src={isLoggedIn ? loggedInSkin : loggedOutSkin} className="res-background-image" alt="" draggable={false} />
-        <div className="res-visualizer-screen">{currentPrint && <img src={currentPrint} className="res-print-internal" alt="Sound Print" />}</div>
+        <div className="res-visualizer-screen">
+          {currentPrint && <img src={currentPrint} className="res-print-internal" alt="Sound Print" />}
+        </div>
         <div className="res-interactive-layer">
           {isLoggedIn ? (
             <>
