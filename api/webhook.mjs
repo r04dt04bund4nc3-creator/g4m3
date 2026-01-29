@@ -1,14 +1,23 @@
 import Stripe from 'stripe';
 import { createClient } from '@supabase/supabase-js';
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
-  apiVersion: '2023-10-16',
-});
+const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
+const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-const supabase = createClient(
-  process.env.SUPABASE_URL, 
-  process.env.SUPABASE_SERVICE_ROLE_KEY
-);
+// Validate
+if (!stripeSecretKey || !webhookSecret || !supabaseUrl || !supabaseKey) {
+  console.error('Missing critical env vars', { 
+    stripe: !!stripeSecretKey, 
+    webhook: !!webhookSecret, 
+    supabase: !!supabaseUrl 
+  });
+  throw new Error('Server configuration incomplete');
+}
+
+const stripe = new Stripe(stripeSecretKey, { apiVersion: '2023-10-16' });
+const supabase = createClient(supabaseUrl, supabaseKey);
 
 export const config = {
   api: {
@@ -25,21 +34,12 @@ async function buffer(readable) {
 }
 
 export default async function handler(req, res) {
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
-  }
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   let buf, sig, event;
-
   try {
     buf = await buffer(req);
     sig = req.headers['stripe-signature'];
-    const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
-
-    if (!webhookSecret) {
-      throw new Error('STRIPE_WEBHOOK_SECRET not set');
-    }
-
     event = stripe.webhooks.constructEvent(buf, sig, webhookSecret);
   } catch (err) {
     console.error('Webhook signature failed:', err.message);
@@ -51,25 +51,22 @@ export default async function handler(req, res) {
     const userId = session.client_reference_id;
     const tier = session.metadata?.tier;
 
-    if (!userId || !tier) {
-      console.warn('Missing userId or tier', { userId, tier });
-      return res.status(200).json({ received: true });
-    }
+    if (!userId || !tier) return res.status(200).json({ received: true });
 
     try {
       const { error } = await supabase
         .from('user_streaks')
         .update({ 
           subscription_status: 'active',
-          subscription_tier: tier,
+          subscription_tier: tier 
         })
         .eq('user_id', userId);
 
       if (error) throw error;
-      console.log('Updated subscription for', userId);
+      console.log(`✅ Subscription activated for ${userId} (${tier})`);
     } catch (dbErr) {
-      console.error('DB update failed:', dbErr);
-      return res.status(500).send('Database update failed');
+      console.error('DB Update Failed:', dbErr);
+      return res.status(500).send('DB Error');
     }
   }
 

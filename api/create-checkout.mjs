@@ -1,6 +1,21 @@
 import Stripe from 'stripe';
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
+// 1. VALIDATE ENV VARS IMMEDIATELY
+const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
+const priceMonthly = process.env.STRIPE_PRICE_MONTHLY;
+const priceAnnual = process.env.STRIPE_PRICE_ANNUAL;
+
+if (!stripeSecretKey) {
+  console.error('FATAL: STRIPE_SECRET_KEY is missing in environment variables');
+  throw new Error('Server configuration error: STRIPE_SECRET_KEY missing');
+}
+if (!priceMonthly || !priceAnnual) {
+  console.error('FATAL: Stripe Price IDs are missing', { priceMonthly, priceAnnual });
+  throw new Error('Server configuration error: Price IDs missing');
+}
+
+// 2. INITIALIZE STRIPE
+const stripe = new Stripe(stripeSecretKey, {
   apiVersion: '2023-10-16',
 });
 
@@ -10,9 +25,9 @@ export default async function handler(req, res) {
     return res.status(200).json({
       status: 'OK',
       env: {
-        STRIPE_SECRET_KEY: !!process.env.STRIPE_SECRET_KEY,
-        STRIPE_PRICE_MONTHLY: !!process.env.STRIPE_PRICE_MONTHLY,
-        STRIPE_PRICE_ANNUAL: !!process.env.STRIPE_PRICE_ANNUAL,
+        STRIPE_SECRET_KEY: !!stripeSecretKey,
+        STRIPE_PRICE_MONTHLY: !!priceMonthly,
+        STRIPE_PRICE_ANNUAL: !!priceAnnual,
       },
     });
   }
@@ -25,16 +40,10 @@ export default async function handler(req, res) {
     const { tier, return_url, user_id } = req.body;
 
     if (!tier || !return_url || !user_id) {
-      throw new Error('Missing required fields');
+      throw new Error('Missing required fields: tier, return_url, user_id');
     }
 
-    const priceId = tier === 'prize-6' 
-      ? process.env.STRIPE_PRICE_MONTHLY 
-      : process.env.STRIPE_PRICE_ANNUAL;
-
-    if (!priceId) {
-      throw new Error(`Price ID not configured for tier: ${tier}`);
-    }
+    const priceId = tier === 'prize-6' ? priceMonthly : priceAnnual;
 
     const session = await stripe.checkout.sessions.create({
       mode: 'subscription',
@@ -49,6 +58,7 @@ export default async function handler(req, res) {
     return res.status(200).json({ url: session.url });
   } catch (err) {
     console.error('Checkout error:', err);
-    return res.status(400).json({ error: err.message });
+    // Return plain text to avoid JSON parse errors on frontend if we crash here
+    return res.status(500).send(err.message);
   }
 }
