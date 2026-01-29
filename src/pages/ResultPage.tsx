@@ -63,15 +63,14 @@ type StreakState = {
   subscriptionActive: boolean;
 };
 
-// IMPORTANT: Stripe Checkout uses PRICE ids (price_...), not prod_...
+// IMPORTANT: Stripe Price IDs (not product IDs)
 const STRIPE_PRICE_MONTHLY = 'price_1SunwRDYxdzhldrSrgIKqUV6';
 const STRIPE_PRICE_ANNUAL = 'price_1SuoAmDYxdzhldrS6iMLinDk';
 
-// Your deployed function endpoint (after deploying the Edge Function)
-const CHECKOUT_FN_URL =
-  'https://ezdplrhxfzwpdwnsgaly.functions.supabase.co/create-checkout-session';
+// Vercel function endpoint (relative path)
+const CHECKOUT_FN_URL = '/api/create-checkout';
 
-// Copy tuned for value + rarity mechanics (no “deflationary” language)
+// SACRED TEXT CONTENT
 const PRIZE_TEXTS = {
   6: {
     title: 'THE MONTHLY KEEPER',
@@ -151,7 +150,6 @@ const ResultPage: React.FC = () => {
     }
 
     if (canceled) {
-      // user backed out of checkout
       try {
         window.history.replaceState({}, '', '/result');
       } catch {}
@@ -316,7 +314,7 @@ const ResultPage: React.FC = () => {
     }
   };
 
-  /** Stripe Checkout: calls Supabase Edge Function using JWT */
+  /** Stripe Checkout: calls Vercel Serverless Function */
   const handleStripeCheckout = useCallback(
     async (tier: 'prize-6' | 'prize-3') => {
       if (!auth.user?.id) {
@@ -327,22 +325,12 @@ const ResultPage: React.FC = () => {
       trackEvent('stripe_checkout_initiated', { tier });
 
       try {
-        const { data } = await supabase.auth.getSession();
-        const token = data.session?.access_token;
-
-        if (!token) {
-          alert('Session expired. Please sign in again.');
-          return;
-        }
-
         const res = await fetch(CHECKOUT_FN_URL, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
-          },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             tier,
+            user_id: auth.user.id, // Passed explicitly since we're not using JWT here
             return_url: `${window.location.origin}/result`,
           }),
         });
