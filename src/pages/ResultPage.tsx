@@ -78,10 +78,10 @@ const PRIZE_TEXTS = {
   },
   3: {
     title: 'ANNUAL ARCHIVIST',
-    headline: '$36/year (50% off) · Best Value',
-    body: 'Same monthly NFT claims. Pay once for the year—equivalent to $3/month. Twelve months = $468 in claim value. Save $36 vs monthly.',
-    scarcity: 'Supply tightens: 216 mints → 215 → ... → 1.',
-    cta: 'TAP TO SEAL THE YEAR',
+    headline: '$36/year · The Big Deal',
+    body: 'Access the full 216-artifact archive for one year. Claim one NFT each month. Total claim value over 12 months: $468, $2808 in two years, $16,848 in three years.',
+    scarcity: 'Each artifact is rarer than the last: 216 mints for NFT #1 → 1 mint of NFT #216. Get there first!',
+    cta: 'TAP TO BUILD',
   },
 };
 
