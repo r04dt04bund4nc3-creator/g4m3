@@ -4,7 +4,8 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useApp } from '../state/AppContext';
 import { useAnalytics } from '../hooks/useAnalytics';
 import { supabase } from '../lib/supabaseClient';
-import { claimRitualArtifact } from '../lib/manifold';
+// REMOVED MANIFOLD IMPORT FOR ISOLATION
+// import { claimRitualArtifact, MANIFOLD_NFT_URL } from '../lib/manifold'; // Manifold imports removed for now
 
 // Assets
 import loggedOutSkin from '../assets/result-logged-out.webp';
@@ -68,8 +69,9 @@ const REVEAL_DELAY_MS = 2000;
 const MONTHLY_TIMEOUT_MS = 20000; // 20s to read then auto-hub
 const ANNUAL_TIMEOUT_MS = 30000;  // 30s to read then auto-hub
 
-// Manifold NFT preview / claim page
-const MANIFOLD_NFT_URL = 'https://manifold.xyz/@r41nb0w/id/4078311664';
+// Manifold NFT URL REMOVED FOR ISOLATION (will be re-added later)
+// const MANIFOLD_NFT_URL = 'https://manifold.xyz/@r41nb0w/id/4078311664';
+
 
 // Standalone copy for both paths
 const PRIZE_TEXTS = {
@@ -112,7 +114,29 @@ const ResultPage: React.FC = () => {
     subscriptionActive: false,
   });
 
+  // 🚨 CRITICAL FIX: Wait for auth to initialize before rendering the page content
+  // This prevents the login loop/black screen by ensuring `auth.user` is reliable.
+  if (auth.isLoading) {
+    return (
+      <div className="res-page-root">
+        <div className="loading-spinner">SYNCING ASTRAL SIGNAL...</div>
+      </div>
+    );
+  }
+
   const isLoggedIn = !!auth.user?.id;
+
+  // openManifold helper REMOVED FOR ISOLATION
+  // const openManifold = useCallback(
+  //   (source: string) => {
+  //     trackEvent('manifold_open', { source });
+  //     const win = window.open(MANIFOLD_NFT_URL, '_blank', 'noopener,noreferrer');
+  //     if (!win) {
+  //       window.location.href = MANIFOLD_NFT_URL;
+  //     }
+  //   },
+  //   [trackEvent]
+  // );
 
   // Handle Stripe return
   useEffect(() => {
@@ -179,7 +203,8 @@ const ResultPage: React.FC = () => {
 
   // Fetch streak
   const fetchStreak = useCallback(async () => {
-    if (!auth.user?.id) return;
+    // Only attempt to fetch streak if user is logged in
+    if (!auth.user?.id) return; 
     setLoadingStreak(true);
     try {
       const today = new Date().toISOString().split('T')[0];
@@ -238,7 +263,7 @@ const ResultPage: React.FC = () => {
     } finally {
       setLoadingStreak(false);
     }
-  }, [auth.user?.id]);
+  }, [auth.user?.id]); // Depend on auth.user.id to re-fetch streak when auth state changes
 
   useEffect(() => {
     if (auth.user?.id) fetchStreak();
@@ -279,32 +304,22 @@ const ResultPage: React.FC = () => {
     setView('slots');
   }, [effectiveBlob, trackEvent]);
 
-  // Helper: open Manifold NFT page from different sources
-  const openManifold = useCallback(
-    (source: string) => {
-      trackEvent('manifold_open', { source });
-      const win = window.open(MANIFOLD_NFT_URL, '_blank', 'noopener,noreferrer');
-      if (!win) {
-        // Fallback if popup blocked – navigate same tab
-        window.location.href = MANIFOLD_NFT_URL;
-      }
-    },
-    [trackEvent]
-  );
-
+  // handleClaim REMOVED FOR ISOLATION
   const handleClaim = async () => {
+    // alert("Manifold claim is not enabled in this version for testing. This would open Manifold.");
+    // Temporarily setting nft_claimed to true to simulate claim for debugging
     if (!auth.user?.id) return;
     setClaiming(true);
     try {
-      await claimRitualArtifact(auth.user.id);
+      // await claimRitualArtifact(auth.user.id); // Re-enable once Manifold is integrated
       await supabase.from('user_streaks').update({ nft_claimed: true }).eq('user_id', auth.user.id);
       setStreak(prev => ({ ...prev, nftClaimed: true }));
       trackEvent('nft_claimed', { day: 6 });
-
-      // After recording the claim, open the Manifold NFT page
-      openManifold('claim');
+      // openManifold('claim'); // Re-enable once Manifold is integrated
+      alert("NFT Claimed! (Manifold redirect simulated)");
     } catch (e) {
       console.error(e);
+      alert("Failed to record claim.");
     } finally {
       setClaiming(false);
     }
@@ -399,7 +414,8 @@ const ResultPage: React.FC = () => {
                   The offering is received.
                   <br />
                   Monthly claims are now open.
-                  {subscriptionTier && <><br />Tier: {subscriptionTier}</>}
+                  {/* FIX: Restored use of subscriptionTier here to fix TS warning */}
+                  {subscriptionTier && <><br />Tier: {subscriptionTier}</>} 
                 </p>
                 <button className="confirmation-cta" onClick={() => setIsConfirmed(false)}>
                   Continue
@@ -407,29 +423,15 @@ const ResultPage: React.FC = () => {
               </div>
             )}
 
-            {/* New: three portal hotspots that open Manifold NFT page */}
-            {!isConfirmed && (
+            {/* Manifold Hub Buttons REMOVED FOR ISOLATION */}
+            {/* These will be re-added later, using existing CSS */}
+            {/* {!isConfirmed && (
               <>
-                <button
-                  className="hs"
-                  style={{ left: '28.5%', top: '50%', width: '19%', height: '34%' }}
-                  onClick={() => openManifold('hub-left')}
-                  aria-label="Open artifact portal (left)"
-                />
-                <button
-                  className="hs"
-                  style={{ left: '50%', top: '50%', width: '19%', height: '34%' }}
-                  onClick={() => openManifold('hub-center')}
-                  aria-label="Open artifact portal (center)"
-                />
-                <button
-                  className="hs"
-                  style={{ left: '71.5%', top: '50%', width: '19%', height: '34%' }}
-                  onClick={() => openManifold('hub-right')}
-                  aria-label="Open artifact portal (right)"
-                />
+                <button className="hs hs-hub-left" onClick={() => openManifold('hub-left')} aria-label="Open artifact portal left" />
+                <button className="hs hs-hub-center" onClick={() => openManifold('hub-center')} aria-label="Open artifact portal center" />
+                <button className="hs hs-hub-right" onClick={() => openManifold('hub-right')} aria-label="Open artifact portal right" />
               </>
-            )}
+            )} */}
 
             <button className="hs hs-hub-home" onClick={goHome} aria-label="Return Home" />
           </div>
