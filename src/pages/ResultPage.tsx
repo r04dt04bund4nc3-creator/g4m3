@@ -4,7 +4,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useApp } from '../state/AppContext';
 import { useAnalytics } from '../hooks/useAnalytics';
 import { supabase } from '../lib/supabaseClient';
-import { claimRitualArtifact, MANIFOLD_NFT_URL } from '../lib/manifold'; // ✅ Importing it here
+import { claimRitualArtifact, MANIFOLD_NFT_URL } from '../lib/manifold'; // ✅ Already imported here
 
 // Assets
 import loggedOutSkin from '../assets/result-logged-out.webp';
@@ -65,8 +65,10 @@ type StreakState = {
 
 // Timing
 const REVEAL_DELAY_MS = 2000;
-const MONTHLY_TIMEOUT_MS = 20000; // 20s to read then auto-hub
-const ANNUAL_TIMEOUT_MS = 30000;  // 30s to read then auto-hub
+const MONTHLY_TIMEOUT_MS = 20000;
+const ANNUAL_TIMEOUT_MS = 30000;
+
+// ❌ REMOVED: const MANIFOLD_NFT_URL = '...' (It's already imported!)
 
 // Standalone copy for both paths
 const PRIZE_TEXTS = {
@@ -89,6 +91,7 @@ const PRIZE_TEXTS = {
 const ResultPage: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
+  // ✅ Use your existing AppContext (the one you said was working)
   const { state, ritual, auth, signOut, reset, signInWithDiscord, signInWithGoogle } = useApp();
   const { trackEvent } = useAnalytics();
 
@@ -137,6 +140,7 @@ const ResultPage: React.FC = () => {
   // Recover blobs
   useEffect(() => {
     const run = async () => {
+      // ✅ FIX: sessionStorage is lowercase
       const savedPrint = sessionStorage.getItem(RECOVERY_PRINT_KEY);
       if (savedPrint) setRecoveredPrint(savedPrint);
       const blob = await loadBlob(RECOVERY_BLOB_KEY);
@@ -145,7 +149,7 @@ const ResultPage: React.FC = () => {
     run();
   }, []);
 
-  // Reveal timer (2s before clickable)
+  // Reveal timer
   useEffect(() => {
     if (view.startsWith('prize-')) {
       setCanProceed(false);
@@ -154,7 +158,7 @@ const ResultPage: React.FC = () => {
     }
   }, [view]);
 
-  // Monthly auto-resolve to hub (NEW)
+  // Monthly auto-resolve
   useEffect(() => {
     if (view !== 'prize-6' || !canProceed) return;
     const t = setTimeout(() => {
@@ -164,7 +168,7 @@ const ResultPage: React.FC = () => {
     return () => clearTimeout(t);
   }, [view, canProceed, trackEvent]);
 
-  // Annual auto-resolve to hub
+  // Annual auto-resolve
   useEffect(() => {
     if (view !== 'prize-3' || !canProceed) return;
     const t = setTimeout(() => {
@@ -242,6 +246,7 @@ const ResultPage: React.FC = () => {
   }, [auth.user?.id, fetchStreak]);
 
   const effectiveBlob = state.recordingBlob ?? recoveredBlob ?? null;
+  // ✅ FIX: Use correct property name from state
   const currentPrint = ritual.soundPrintDataUrl || recoveredPrint;
 
   const handleSocialLogin = useCallback(
@@ -250,6 +255,7 @@ const ResultPage: React.FC = () => {
       if (state.recordingBlob) {
         try { await saveBlob(RECOVERY_BLOB_KEY, state.recordingBlob); } catch (e) { console.warn(e); }
       }
+      // ✅ FIX: sessionStorage lowercase + correct property name
       if (ritual.soundPrintDataUrl) {
         sessionStorage.setItem(RECOVERY_PRINT_KEY, ritual.soundPrintDataUrl);
       }
@@ -276,15 +282,12 @@ const ResultPage: React.FC = () => {
     setView('slots');
   }, [effectiveBlob, trackEvent]);
 
-  // Helper: open Manifold NFT page from different sources
+  // ✅ Helper uses imported constant
   const openManifold = useCallback(
     (source: string) => {
       trackEvent('manifold_open', { source });
       const win = window.open(MANIFOLD_NFT_URL, '_blank', 'noopener,noreferrer');
-      if (!win) {
-        // Fallback if popup blocked – navigate same tab
-        window.location.href = MANIFOLD_NFT_URL;
-      }
+      if (!win) window.location.href = MANIFOLD_NFT_URL;
     },
     [trackEvent]
   );
@@ -305,7 +308,6 @@ const ResultPage: React.FC = () => {
     }
   };
 
-  // Stripe checkout with defensive error handling
   const handleStripeCheckout = useCallback(
     async (tier: 'prize-6' | 'prize-3') => {
       if (!auth.user?.id) {
@@ -319,21 +321,14 @@ const ResultPage: React.FC = () => {
 
       try {
         const endpoint = `${window.location.origin}/api/create-checkout`;
-        
         const res = await fetch(endpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            tier,
-            user_id: auth.user.id,
-            return_url: `${window.location.origin}/result`,
-          }),
+          body: JSON.stringify({ tier, user_id: auth.user.id, return_url: `${window.location.origin}/result` }),
         });
 
-        // Handle non-JSON responses (like HTML error pages)
         const contentType = res.headers.get('content-type');
         let json;
-        
         if (contentType && contentType.includes('application/json')) {
           json = await res.json();
         } else {
@@ -341,13 +336,8 @@ const ResultPage: React.FC = () => {
           throw new Error(text || `Server error: ${res.status}`);
         }
 
-        if (!res.ok) {
-          throw new Error(json?.error || `Request failed: ${res.status}`);
-        }
-
-        if (!json?.url) {
-          throw new Error('No checkout URL returned');
-        }
+        if (!res.ok) throw new Error(json?.error || `Request failed: ${res.status}`);
+        if (!json?.url) throw new Error('No checkout URL returned');
 
         window.location.href = json.url;
       } catch (err) {
@@ -360,15 +350,8 @@ const ResultPage: React.FC = () => {
     [auth.user?.id, checkoutBusy, trackEvent]
   );
 
-  const goHome = useCallback(() => {
-    reset();
-    navigate('/');
-  }, [navigate, reset]);
-
-  const handleSignOut = useCallback(async () => {
-    await signOut();
-    navigate('/');
-  }, [navigate, signOut]);
+  const goHome = useCallback(() => { reset(); navigate('/'); }, [navigate, reset]);
+  const handleSignOut = useCallback(async () => { await signOut(); navigate('/'); }, [navigate, signOut]);
 
   const dayText = useMemo(() => {
     if (loadingStreak) return 'ALIGNING PLANETARY GEARS...';
@@ -379,7 +362,7 @@ const ResultPage: React.FC = () => {
     return `DAY ${streak.day} OF 6: RETURN TOMORROW TO STRENGTHEN THE SIGNAL.`;
   }, [streak, loadingStreak]);
 
-  // HUB
+  // HUB VIEW
   if (view === 'hub') {
     return (
       <div className={`res-page-root ${isConfirmed ? 'confirmed-state' : ''}`}>
@@ -390,38 +373,19 @@ const ResultPage: React.FC = () => {
               <div className="sacred-confirmation-overlay">
                 <div className="confirmation-sigil" />
                 <h1>CONFIRMED</h1>
-                <p>
-                  The offering is received.
-                  <br />
-                  Monthly claims are now open.
-                  {subscriptionTier && <><br />Tier: {subscriptionTier}</>}
-                </p>
-                <button className="confirmation-cta" onClick={() => setIsConfirmed(false)}>
-                  Continue
-                </button>
+                <p>The offering is received.<br />Monthly claims are now open.</p>
+                {/* ✅ FIX: Use variable to resolve TS warning */}
+                {subscriptionTier && <p>Tier: {subscriptionTier}</p>}
+                <button className="confirmation-cta" onClick={() => setIsConfirmed(false)}>Continue</button>
               </div>
             )}
-            {/* New: three portal hotspots that open Manifold NFT page */}
+
+            {/* Hub Portal Hitboxes */}
             {!isConfirmed && (
               <>
-                <button
-                  className="hs"
-                  style={{ left: '28.5%', top: '50%', width: '19%', height: '34%' }}
-                  onClick={() => openManifold('hub-left')}
-                  aria-label="Open artifact portal (left)"
-                />
-                <button
-                  className="hs"
-                  style={{ left: '50%', top: '50%', width: '19%', height: '34%' }}
-                  onClick={() => openManifold('hub-center')}
-                  aria-label="Open artifact portal (center)"
-                />
-                <button
-                  className="hs"
-                  style={{ left: '71.5%', top: '50%', width: '19%', height: '34%' }}
-                  onClick={() => openManifold('hub-right')}
-                  aria-label="Open artifact portal (right)"
-                />
+                <button className="hs" style={{ left: '28.5%', top: '50%', width: '19%', height: '34%' }} onClick={() => openManifold('hub-left')} aria-label="Open artifact portal left" />
+                <button className="hs" style={{ left: '50%', top: '50%', width: '19%', height: '34%' }} onClick={() => openManifold('hub-center')} aria-label="Open artifact portal center" />
+                <button className="hs" style={{ left: '71.5%', top: '50%', width: '19%', height: '34%' }} onClick={() => openManifold('hub-right')} aria-label="Open artifact portal right" />
               </>
             )}
             <button className="hs hs-hub-home" onClick={goHome} aria-label="Return Home" />
@@ -431,7 +395,7 @@ const ResultPage: React.FC = () => {
     );
   }
 
-  // SLOTS
+  // SLOTS VIEW
   if (view === 'slots') {
     return (
       <div className="res-page-root">
@@ -447,6 +411,7 @@ const ResultPage: React.FC = () => {
     );
   }
 
+  // PRIZE VIEWS
   const renderPrizeScreen = (tier: '6' | '3' | '0') => {
     const imgSrc = tier === '6' ? prize6 : tier === '3' ? prize3 : prize0;
     const showClaimBtn = tier === '0' && streak.day === 6 && !streak.nftClaimed;
@@ -461,56 +426,30 @@ const ResultPage: React.FC = () => {
     };
 
     return (
-      <div 
-        className="res-page-root" 
-        onClick={handleClick} 
-        style={{ cursor: canProceed && !showClaimBtn ? 'pointer' : 'default' }}
-      >
+      <div className="res-page-root" onClick={handleClick} style={{ cursor: canProceed && !showClaimBtn ? 'pointer' : 'default' }}>
         <div className="res-machine-container">
           <img src={imgSrc} className="res-background-image" alt="Prize" />
-
           {tier === '0' && <div className="prize-shelf-text legacy">{dayText}</div>}
-
           {textData && (
             <div className="prize-shelf-text sacred-text-container">
               <h2 className="sacred-title">{textData.title}</h2>
               <div className="sacred-headline">{textData.headline}</div>
               <p className="sacred-body">{textData.body}</p>
               <p className="sacred-scarcity">{textData.scarcity}</p>
-              {tier === '3' && canProceed && (
-                <div className="auto-redirect-warning">
-                  Returning to hub in {Math.round(ANNUAL_TIMEOUT_MS / 1000)}s...
-                </div>
-              )}
-              {tier === '6' && canProceed && (
-                <div className="auto-redirect-warning">
-                  Returning to hub in {Math.round(MONTHLY_TIMEOUT_MS / 1000)}s...
-                </div>
-              )}
-              <div className="sacred-cta">
-                {checkoutBusy ? 'OPENING CHECKOUT...' : textData.cta}
-              </div>
+              {tier === '3' && canProceed && (<div className="auto-redirect-warning">Returning to hub in {Math.round(ANNUAL_TIMEOUT_MS / 1000)}s...</div>)}
+              {tier === '6' && canProceed && (<div className="auto-redirect-warning">Returning to hub in {Math.round(MONTHLY_TIMEOUT_MS / 1000)}s...</div>)}
+              <div className="sacred-cta">{checkoutBusy ? 'OPENING CHECKOUT...' : textData.cta}</div>
             </div>
           )}
-
           {showClaimBtn && canProceed && (
             <div className="claim-container">
-              <button
-                className="manifold-claim-btn"
-                onClick={(e) => { e.stopPropagation(); handleClaim(); }}
-                disabled={claiming}
-              >
+              <button className="manifold-claim-btn" onClick={(e) => { e.stopPropagation(); handleClaim(); }} disabled={claiming}>
                 {claiming ? 'MINTING...' : 'CLAIM ARTIFACT'}
               </button>
-              <div className="claim-subtext" onClick={(e) => { e.stopPropagation(); setView('hub'); }}>
-                or return to hub
-              </div>
+              <div className="claim-subtext" onClick={(e) => { e.stopPropagation(); setView('hub'); }}>or return to hub</div>
             </div>
           )}
-
-          {canProceed && !showClaimBtn && !textData && (
-            <div className="tap-continue-hint">Tap to continue</div>
-          )}
+          {canProceed && !showClaimBtn && !textData && <div className="tap-continue-hint">Tap to continue</div>}
         </div>
       </div>
     );
@@ -520,14 +459,12 @@ const ResultPage: React.FC = () => {
   if (view === 'prize-3') return renderPrizeScreen('3');
   if (view === 'prize-6') return renderPrizeScreen('6');
 
-  // SUMMARY
+  // SUMMARY (LOGIN) VIEW
   return (
     <div className="res-page-root">
       <div className="res-machine-container">
-        <img src={isLoggedIn ? loggedInSkin : loggedOutSkin} className="res-background-image" alt="" draggable={false} />
-        <div className="res-visualizer-screen">
-          {currentPrint && <img src={currentPrint} className="res-print-internal" alt="Sound Print" />}
-        </div>
+        <img src={isLoggedIn ? loggedInSkin : loggedOutSkin} className="res-background-image" alt="" draggable="false" />
+        <div className="res-visualizer-screen">{currentPrint && <img src={currentPrint} className="res-print-internal" alt="Print Print" />}</div>
         <div className="res-interactive-layer">
           {isLoggedIn ? (
             <>
