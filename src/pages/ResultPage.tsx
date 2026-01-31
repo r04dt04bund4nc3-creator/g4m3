@@ -110,11 +110,11 @@ const ResultPage: React.FC = () => {
     subscriptionActive: false,
   });
 
-  // 🚨 HYBRID AUTH CHECK: Prevents login loop by detecting pending redirects
-  // If we have access_token in URL but no user yet, force loading state.
+  // 🚨 NEW: Check for OAuth tokens in URL hash
+  // If found, force a full page reload to ensure session is ready.
   const hasAuthParams = /access_token|refresh_token|code/.test(location.hash || location.search);
-  const isAuthLoading = auth.isLoading || (hasAuthParams && !auth.user);
-  
+
+  // Derive isLoggedIn safely
   const isLoggedIn = !!auth.user?.id;
 
   const goHome = useCallback(() => {
@@ -144,6 +144,17 @@ const ResultPage: React.FC = () => {
       setView('summary');
     }
   }, [location.search]);
+
+  // 🚨 CRITICAL FIX: Force reload after OAuth login
+  useEffect(() => {
+    if (hasAuthParams && !isLoggedIn) {
+      // Wait 1 second to let Supabase finish its internal setup, then reload.
+      const timer = setTimeout(() => {
+        window.location.reload();
+      }, 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [hasAuthParams, isLoggedIn]);
 
   // Recover blobs
   useEffect(() => {
@@ -479,7 +490,7 @@ const ResultPage: React.FC = () => {
         </div>
 
         {/* LOADING OVERLAY */}
-        {isAuthLoading && (
+        {hasAuthParams && !isLoggedIn && (
           <div className="auth-loading-overlay">
             <div className="loading-spinner">SYNCING ASTRAL SIGNAL...</div>
           </div>
