@@ -22,7 +22,6 @@
   width: 100%;
   height: 100%;
   object-fit: cover;
-  /* FIX: Nudged down to prevent top clipping of headers on 16:9 artwork */
   object-position: center 15%; 
   user-select: none;
   pointer-events: none;
@@ -76,10 +75,9 @@
 .hs-signout-li { left: 67.2%; width: 14%; height: 5%; }
 
 /* Slots - Calibrated for ritual-slots.webp 1920x1080 */
-/* The three green neon circles - ADJUSTED to match new object-position */
 .hs-slot-left { 
   left: 28.5%; 
-  top: 50%; /* Adjusted from 48% to align with shifted background */
+  top: 50%; 
   width: 19%; 
   height: 34%; 
   border-radius: 50%;
@@ -88,7 +86,7 @@
 
 .hs-slot-center { 
   left: 50%; 
-  top: 50%; /* Adjusted from 48% */
+  top: 50%; 
   width: 19%; 
   height: 34%; 
   border-radius: 50%;
@@ -97,7 +95,7 @@
 
 .hs-slot-right { 
   left: 71.5%; 
-  top: 50%; /* Adjusted from 48% */
+  top: 50%; 
   width: 19%; 
   height: 34%; 
   border-radius: 50%;
@@ -113,11 +111,44 @@
 /* Hub View Hotspots (Steam Slots page) */
 .hs-hub-home { left: 50%; top: 92%; width: 20%; height: 6%; }
 
+/* New: Hub portal hotspots for steam-slots-hub.webp - Using CSS for positioning */
+/* These are positioned over the three circular displays in the hub image */
+.hs-hub-left { 
+  left: 28.5%; 
+  top: 50%; 
+  width: 19%; 
+  height: 34%; 
+  border-radius: 50%;
+}
+
+.hs-hub-center { 
+  left: 50%; 
+  top: 50%; 
+  width: 19%; 
+  height: 34%; 
+  border-radius: 50%;
+}
+
+.hs-hub-right { 
+  left: 71.5%; 
+  top: 50%; 
+  width: 19%; 
+  height: 34%; 
+  border-radius: 50%;
+}
+
+/* Hover effect to show interactivity for hub portals */
+.hs-hub-left:hover, .hs-hub-center:hover, .hs-hub-right:hover {
+  background: rgba(0, 255, 157, 0.1); /* Slight green tint on hover */
+  box-shadow: 0 0 20px rgba(0, 255, 157, 0.2);
+}
+
+
 /* PRIZE OVERLAYS - FIXED POSITIONING */
 .prize-shelf-text {
   position: absolute;
   left: 50.1%;
-  top: 22%; /* Moved down from 15.5% to clear the 4B4KU5 header */
+  top: 22%;
   transform: translate(-50%, -50%);
   width: 80%;
   text-align: center;
@@ -125,10 +156,9 @@
   font-family: 'Courier New', Courier, monospace;
   font-weight: bold;
   text-shadow: 0 0 10px rgba(0, 255, 100, 0.8), 0 0 20px rgba(0, 255, 100, 0.4);
-  font-size: clamp(14px, 1.5vw, 20px); /* Slightly smaller for fit */
+  font-size: clamp(14px, 1.5vw, 20px);
   pointer-events: none;
   z-index: 5;
-  /* Added backing for readability against busy backgrounds */
   background: rgba(0, 0, 0, 0.4);
   padding: 10px;
   border-radius: 4px;
@@ -136,7 +166,7 @@
 
 .tap-continue-hint {
   position: absolute;
-  bottom: 15%; /* Moved up from 10% to avoid bottom clipping */
+  bottom: 15%;
   left: 50%;
   transform: translateX(-50%);
   color: rgba(201, 255, 216, 0.6);
@@ -196,34 +226,27 @@
   50% { opacity: 0.8; }
   100% { opacity: 0.4; }
 }
-/* Hub Portal Hotspots for steam-slots-hub.webp */
-/* Positioned over the three display cylinders in the center */
-.hs-hub-left { 
-  left: 28.5%; 
-  top: 52%; 
-  width: 20%; 
-  height: 35%; 
-  border-radius: 10px;
+
+/* Loading Spinner for Auth State */
+.loading-spinner {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: #00ff9d;
+  font-family: 'Courier New', monospace;
+  font-size: 1.2rem;
+  text-shadow: 0 0 10px #00ff9d;
+  animation: pulse-text 2s infinite;
+  z-index: 100; /* Ensure it's on top */
 }
 
-.hs-hub-center { 
-  left: 50%; 
-  top: 52%; 
-  width: 20%; 
-  height: 35%; 
-  border-radius: 10px;
+@keyframes pulse-text {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
 }
 
-.hs-hub-right { 
-  left: 71.5%; 
-  top: 52%; 
-  width: 20%; 
-  height: 35%; 
-  border-radius: 10px;
-}
-
-/* Hover effect to show interactivity */
-.hs-hub-left:hover, .hs-hub-center:hover, .hs-hub-right:hover {
-  background: rgba(0, 255, 157, 0.1);
-  box-shadow: 0 0 20px rgba(0, 255, 157, 0.2);
+/* Ensure overlay is on top */
+.sacred-confirmation-overlay {
+  z-index: 20;
 }
