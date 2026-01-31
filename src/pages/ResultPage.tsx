@@ -4,7 +4,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useApp } from '../state/AppContext';
 import { useAnalytics } from '../hooks/useAnalytics';
 import { supabase } from '../lib/supabaseClient';
-import { claimRitualArtifact, MANIFOLD_NFT_URL } from '../lib/manifold'; // ✅ Already imported here
+import { claimRitualArtifact, MANIFOLD_NFT_URL } from '../lib/manifold';
 
 // Assets
 import loggedOutSkin from '../assets/result-logged-out.webp';
@@ -65,10 +65,8 @@ type StreakState = {
 
 // Timing
 const REVEAL_DELAY_MS = 2000;
-const MONTHLY_TIMEOUT_MS = 20000;
+const MONTHLY_TIMEOUT_MS = 20000; 
 const ANNUAL_TIMEOUT_MS = 30000;
-
-// ❌ REMOVED: const MANIFOLD_NFT_URL = '...' (It's already imported!)
 
 // Standalone copy for both paths
 const PRIZE_TEXTS = {
@@ -91,7 +89,6 @@ const PRIZE_TEXTS = {
 const ResultPage: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  // ✅ Use your existing AppContext (the one you said was working)
   const { state, ritual, auth, signOut, reset, signInWithDiscord, signInWithGoogle } = useApp();
   const { trackEvent } = useAnalytics();
 
@@ -113,6 +110,20 @@ const ResultPage: React.FC = () => {
   });
 
   const isLoggedIn = !!auth.user?.id;
+
+  // 1. ALL HOOKS MUST RUN BEFORE ANY RETURNS
+  
+  // Helper: open Manifold NFT page
+  const openManifold = useCallback(
+    (source: string) => {
+      trackEvent('manifold_open', { source });
+      const win = window.open(MANIFOLD_NFT_URL, '_blank', 'noopener,noreferrer');
+      if (!win) {
+        window.location.href = MANIFOLD_NFT_URL;
+      }
+    },
+    [trackEvent]
+  );
 
   // Handle Stripe return
   useEffect(() => {
@@ -137,10 +148,9 @@ const ResultPage: React.FC = () => {
     }
   }, [location.search]);
 
-  // Recover blobs
+  // Recover blobs - THIS RESTORES THE VISUALS
   useEffect(() => {
     const run = async () => {
-      // ✅ FIX: sessionStorage is lowercase
       const savedPrint = sessionStorage.getItem(RECOVERY_PRINT_KEY);
       if (savedPrint) setRecoveredPrint(savedPrint);
       const blob = await loadBlob(RECOVERY_BLOB_KEY);
@@ -158,7 +168,7 @@ const ResultPage: React.FC = () => {
     }
   }, [view]);
 
-  // Monthly auto-resolve
+  // Auto-resolve timers
   useEffect(() => {
     if (view !== 'prize-6' || !canProceed) return;
     const t = setTimeout(() => {
@@ -168,7 +178,6 @@ const ResultPage: React.FC = () => {
     return () => clearTimeout(t);
   }, [view, canProceed, trackEvent]);
 
-  // Annual auto-resolve
   useEffect(() => {
     if (view !== 'prize-3' || !canProceed) return;
     const t = setTimeout(() => {
@@ -245,8 +254,8 @@ const ResultPage: React.FC = () => {
     if (auth.user?.id) fetchStreak();
   }, [auth.user?.id, fetchStreak]);
 
+  // 2. CALCULATE DATA - THIS IS YOUR ORIGINAL LOGIC
   const effectiveBlob = state.recordingBlob ?? recoveredBlob ?? null;
-  // ✅ FIX: Use correct property name from state
   const currentPrint = ritual.soundPrintDataUrl || recoveredPrint;
 
   const handleSocialLogin = useCallback(
@@ -255,7 +264,6 @@ const ResultPage: React.FC = () => {
       if (state.recordingBlob) {
         try { await saveBlob(RECOVERY_BLOB_KEY, state.recordingBlob); } catch (e) { console.warn(e); }
       }
-      // ✅ FIX: sessionStorage lowercase + correct property name
       if (ritual.soundPrintDataUrl) {
         sessionStorage.setItem(RECOVERY_PRINT_KEY, ritual.soundPrintDataUrl);
       }
@@ -281,16 +289,6 @@ const ResultPage: React.FC = () => {
     trackEvent('download_and_spin');
     setView('slots');
   }, [effectiveBlob, trackEvent]);
-
-  // ✅ Helper uses imported constant
-  const openManifold = useCallback(
-    (source: string) => {
-      trackEvent('manifold_open', { source });
-      const win = window.open(MANIFOLD_NFT_URL, '_blank', 'noopener,noreferrer');
-      if (!win) window.location.href = MANIFOLD_NFT_URL;
-    },
-    [trackEvent]
-  );
 
   const handleClaim = async () => {
     if (!auth.user?.id) return;
@@ -362,6 +360,17 @@ const ResultPage: React.FC = () => {
     return `DAY ${streak.day} OF 6: RETURN TOMORROW TO STRENGTHEN THE SIGNAL.`;
   }, [streak, loadingStreak]);
 
+  // 🚨 CRITICAL FIX: Safe Loading State
+  // We place this check AFTER all hooks have been declared to respect React rules,
+  // but BEFORE any UI rendering.
+  if (auth.isLoading) {
+    return (
+      <div className="res-page-root">
+        <div className="loading-spinner">SYNCING ASTRAL SIGNAL...</div>
+      </div>
+    );
+  }
+
   // HUB VIEW
   if (view === 'hub') {
     return (
@@ -374,18 +383,16 @@ const ResultPage: React.FC = () => {
                 <div className="confirmation-sigil" />
                 <h1>CONFIRMED</h1>
                 <p>The offering is received.<br />Monthly claims are now open.</p>
-                {/* ✅ FIX: Use variable to resolve TS warning */}
                 {subscriptionTier && <p>Tier: {subscriptionTier}</p>}
                 <button className="confirmation-cta" onClick={() => setIsConfirmed(false)}>Continue</button>
               </div>
             )}
 
-            {/* Hub Portal Hitboxes */}
             {!isConfirmed && (
               <>
-                <button className="hs" style={{ left: '28.5%', top: '50%', width: '19%', height: '34%' }} onClick={() => openManifold('hub-left')} aria-label="Open artifact portal left" />
-                <button className="hs" style={{ left: '50%', top: '50%', width: '19%', height: '34%' }} onClick={() => openManifold('hub-center')} aria-label="Open artifact portal center" />
-                <button className="hs" style={{ left: '71.5%', top: '50%', width: '19%', height: '34%' }} onClick={() => openManifold('hub-right')} aria-label="Open artifact portal right" />
+                <button className="hs hs-hub-left" onClick={() => openManifold('hub-left')} aria-label="Open artifact portal left" />
+                <button className="hs hs-hub-center" onClick={() => openManifold('hub-center')} aria-label="Open artifact portal center" />
+                <button className="hs hs-hub-right" onClick={() => openManifold('hub-right')} aria-label="Open artifact portal right" />
               </>
             )}
             <button className="hs hs-hub-home" onClick={goHome} aria-label="Return Home" />
@@ -436,15 +443,19 @@ const ResultPage: React.FC = () => {
               <div className="sacred-headline">{textData.headline}</div>
               <p className="sacred-body">{textData.body}</p>
               <p className="sacred-scarcity">{textData.scarcity}</p>
-              {tier === '3' && canProceed && (<div className="auto-redirect-warning">Returning to hub in {Math.round(ANNUAL_TIMEOUT_MS / 1000)}s...</div>)}
-              {tier === '6' && canProceed && (<div className="auto-redirect-warning">Returning to hub in {Math.round(MONTHLY_TIMEOUT_MS / 1000)}s...</div>)}
+              {tier === '3' && canProceed && (
+                <div className="auto-redirect-warning">Returning to hub in {Math.round(ANNUAL_TIMEOUT_MS / 1000)}s...</div>
+              )}
+              {tier === '6' && canProceed && (
+                <div className="auto-redirect-warning">Returning to hub in {Math.round(MONTHLY_TIMEOUT_MS / 1000)}s...</div>
+              )}
               <div className="sacred-cta">{checkoutBusy ? 'OPENING CHECKOUT...' : textData.cta}</div>
             </div>
           )}
           {showClaimBtn && canProceed && (
             <div className="claim-container">
               <button className="manifold-claim-btn" onClick={(e) => { e.stopPropagation(); handleClaim(); }} disabled={claiming}>
-                {claiming ? 'MINTING...' : 'CLAIM ARTIFACT'}
+                {claiming ? 'OPENING PORTAL...' : 'CLAIM ARTIFACT'}
               </button>
               <div className="claim-subtext" onClick={(e) => { e.stopPropagation(); setView('hub'); }}>or return to hub</div>
             </div>
@@ -463,8 +474,10 @@ const ResultPage: React.FC = () => {
   return (
     <div className="res-page-root">
       <div className="res-machine-container">
-        <img src={isLoggedIn ? loggedInSkin : loggedOutSkin} className="res-background-image" alt="" draggable="false" />
-        <div className="res-visualizer-screen">{currentPrint && <img src={currentPrint} className="res-print-internal" alt="Print Print" />}</div>
+        <img src={isLoggedIn ? loggedInSkin : loggedOutSkin} className="res-background-image" alt="" draggable={false} />
+        <div className="res-visualizer-screen">
+          {currentPrint && <img src={currentPrint} className="res-print-internal" alt="Sound Print" />}
+        </div>
         <div className="res-interactive-layer">
           {isLoggedIn ? (
             <>
