@@ -65,9 +65,10 @@ type StreakState = {
 
 // Timing
 const REVEAL_DELAY_MS = 2000;
-const MONTHLY_TIMEOUT_MS = 20000;
+const MONTHLY_TIMEOUT_MS = 20000; 
 const ANNUAL_TIMEOUT_MS = 30000;
 
+// Standalone copy for both paths
 const PRIZE_TEXTS = {
   6: {
     title: 'MONTHLY KEEPER',
@@ -79,7 +80,7 @@ const PRIZE_TEXTS = {
   3: {
     title: 'ANNUAL ARCHIVIST',
     headline: '$3/month · 1 NFT per month',
-    body: 'Access the full 216-artifact archive for one year. Claim one NFT each month. claim value over 12 months: $468, $2808 in two years, $16,848 in three years.',
+    body: 'Access the full 216-artifact archive for one year. Claim one NFT each month. Total claim value over 12 months: $468, $2808 in two years, $16,848 in three years.',
     scarcity: 'Each new artifact is rarer than the last: 216 mints for NFT #1 → 1 mint of NFT #216.',
     cta: 'Get there first! TAP to lock in your position.',
   },
@@ -108,19 +109,13 @@ const ResultPage: React.FC = () => {
     subscriptionActive: false,
   });
 
-  // Derive state safely
   const isLoggedIn = !!auth.user?.id;
   const isAuthLoading = auth.isLoading;
 
-  // Helper: open Manifold NFT page
-  const openManifold = useCallback(
-    (source: string) => {
-      trackEvent('manifold_open', { source });
-      const win = window.open(MANIFOLD_NFT_URL, '_blank', 'noopener,noreferrer');
-      if (!win) window.location.href = MANIFOLD_NFT_URL;
-    },
-    [trackEvent]
-  );
+  const goHome = useCallback(() => {
+    reset();
+    navigate('/');
+  }, [navigate, reset]);
 
   // Handle Stripe return
   useEffect(() => {
@@ -165,24 +160,25 @@ const ResultPage: React.FC = () => {
     }
   }, [view]);
 
-  // Auto-resolve timers
+  // Monthly auto-resolve - NOW NAVIGATES HOME
   useEffect(() => {
     if (view !== 'prize-6' || !canProceed) return;
     const t = setTimeout(() => {
-      setView('hub');
+      goHome();
       trackEvent('subscription_timeout', { tier: 'monthly' });
     }, MONTHLY_TIMEOUT_MS);
     return () => clearTimeout(t);
-  }, [view, canProceed, trackEvent]);
+  }, [view, canProceed, trackEvent, goHome]);
 
+  // Annual auto-resolve - NOW NAVIGATES HOME
   useEffect(() => {
     if (view !== 'prize-3' || !canProceed) return;
     const t = setTimeout(() => {
-      setView('hub');
+      goHome();
       trackEvent('subscription_timeout', { tier: 'annual' });
     }, ANNUAL_TIMEOUT_MS);
     return () => clearTimeout(t);
-  }, [view, canProceed, trackEvent]);
+  }, [view, canProceed, trackEvent, goHome]);
 
   // Fetch streak
   const fetchStreak = useCallback(async () => {
@@ -294,7 +290,8 @@ const ResultPage: React.FC = () => {
       await supabase.from('user_streaks').update({ nft_claimed: true }).eq('user_id', auth.user.id);
       setStreak(prev => ({ ...prev, nftClaimed: true }));
       trackEvent('nft_claimed', { day: 6 });
-      openManifold('claim');
+      const win = window.open(MANIFOLD_NFT_URL, '_blank', 'noopener,noreferrer');
+      if (!win) window.location.href = MANIFOLD_NFT_URL;
     } catch (e) {
       console.error(e);
     } finally {
@@ -343,8 +340,7 @@ const ResultPage: React.FC = () => {
     },
     [auth.user?.id, checkoutBusy, trackEvent]
   );
-
-  const goHome = useCallback(() => { reset(); navigate('/'); }, [navigate, reset]);
+  
   const handleSignOut = useCallback(async () => { await signOut(); navigate('/'); }, [navigate, signOut]);
 
   const dayText = useMemo(() => {
@@ -373,11 +369,12 @@ const ResultPage: React.FC = () => {
               </div>
             )}
 
+            {/* FIX: Hub buttons now navigate to prize views */}
             {!isConfirmed && (
               <>
-                <button className="hs hs-hub-left" onClick={() => openManifold('hub-left')} aria-label="Open artifact portal left" />
-                <button className="hs hs-hub-center" onClick={() => openManifold('hub-center')} aria-label="Open artifact portal center" />
-                <button className="hs hs-hub-right" onClick={() => openManifold('hub-right')} aria-label="Open artifact portal right" />
+                <button className="hs hs-hub-left" onClick={() => setView('prize-0')} aria-label="$0 Path" />
+                <button className="hs hs-hub-center" onClick={() => setView('prize-6')} aria-label="$6 Subscription" />
+                <button className="hs hs-hub-right" onClick={() => setView('prize-3')} aria-label="$3 Subscription" />
               </>
             )}
             <button className="hs hs-hub-home" onClick={goHome} aria-label="Return Home" />
@@ -429,10 +426,10 @@ const ResultPage: React.FC = () => {
               <p className="sacred-body">{textData.body}</p>
               <p className="sacred-scarcity">{textData.scarcity}</p>
               {tier === '3' && canProceed && (
-                <div className="auto-redirect-warning">Returning to hub in {Math.round(ANNUAL_TIMEOUT_MS / 1000)}s...</div>
+                <div className="auto-redirect-warning">Returning to start in {Math.round(ANNUAL_TIMEOUT_MS / 1000)}s...</div>
               )}
               {tier === '6' && canProceed && (
-                <div className="auto-redirect-warning">Returning to hub in {Math.round(MONTHLY_TIMEOUT_MS / 1000)}s...</div>
+                <div className="auto-redirect-warning">Returning to start in {Math.round(MONTHLY_TIMEOUT_MS / 1000)}s...</div>
               )}
               <div className="sacred-cta">{checkoutBusy ? 'OPENING CHECKOUT...' : textData.cta}</div>
             </div>
@@ -479,7 +476,7 @@ const ResultPage: React.FC = () => {
           )}
         </div>
 
-        {/* LOADING OVERLAY - Shows on top of content, doesn't replace it */}
+        {/* LOADING OVERLAY */}
         {isAuthLoading && (
           <div className="auth-loading-overlay">
             <div className="loading-spinner">SYNCING ASTRAL SIGNAL...</div>
