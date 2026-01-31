@@ -196,3 +196,34 @@
   50% { opacity: 0.8; }
   100% { opacity: 0.4; }
 }
+/* Hub Portal Hotspots for steam-slots-hub.webp */
+/* Positioned over the three display cylinders in the center */
+.hs-hub-left { 
+  left: 28.5%; 
+  top: 52%; 
+  width: 20%; 
+  height: 35%; 
+  border-radius: 10px;
+}
+
+.hs-hub-center { 
+  left: 50%; 
+  top: 52%; 
+  width: 20%; 
+  height: 35%; 
+  border-radius: 10px;
+}
+
+.hs-hub-right { 
+  left: 71.5%; 
+  top: 52%; 
+  width: 20%; 
+  height: 35%; 
+  border-radius: 10px;
+}
+
+/* Hover effect to show interactivity */
+.hs-hub-left:hover, .hs-hub-center:hover, .hs-hub-right:hover {
+  background: rgba(0, 255, 157, 0.1);
+  box-shadow: 0 0 20px rgba(0, 255, 157, 0.2);
+}
