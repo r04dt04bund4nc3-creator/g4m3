@@ -74,7 +74,7 @@
 .hs-download { left: 50%; width: 19%; height: 7%; }
 .hs-signout-li { left: 67.2%; width: 14%; height: 5%; }
 
-/* Slots - Calibrated for ritual-slots.webp 1920x1080 */
+/* Slots - Calibrated for ritual-slots.webp */
 .hs-slot-left { 
   left: 28.5%; 
   top: 50%; 
@@ -102,7 +102,7 @@
   cursor: pointer;
 }
 
-/* Hover effects for sacred feel */
+/* Hover effects */
 .hs-slot-left:hover, .hs-slot-center:hover, .hs-slot-right:hover {
   box-shadow: 0 0 30px rgba(0, 255, 157, 0.4);
   transform: translate(-50%, -50%) scale(1.05);
@@ -111,8 +111,7 @@
 /* Hub View Hotspots (Steam Slots page) */
 .hs-hub-home { left: 50%; top: 92%; width: 20%; height: 6%; }
 
-/* New: Hub portal hotspots for steam-slots-hub.webp - Using CSS for positioning */
-/* These are positioned over the three circular displays in the hub image */
+/* Hub portal hotspots - same positioning as slot buttons */
 .hs-hub-left { 
   left: 28.5%; 
   top: 50%; 
@@ -137,14 +136,12 @@
   border-radius: 50%;
 }
 
-/* Hover effect to show interactivity for hub portals */
 .hs-hub-left:hover, .hs-hub-center:hover, .hs-hub-right:hover {
-  background: rgba(0, 255, 157, 0.1); /* Slight green tint on hover */
+  background: rgba(0, 255, 157, 0.1);
   box-shadow: 0 0 20px rgba(0, 255, 157, 0.2);
 }
 
-
-/* PRIZE OVERLAYS - FIXED POSITIONING */
+/* PRIZE OVERLAYS */
 .prize-shelf-text {
   position: absolute;
   left: 50.1%;
@@ -227,33 +224,6 @@
   100% { opacity: 0.4; }
 }
 
-/* Loading Spinner for Auth State */
-.loading-spinner {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  color: #00ff9d;
-  font-family: 'Courier New', monospace;
-  font-size: 1.2rem;
-  text-shadow: 0 0 10px #00ff9d;
-  animation: pulse-text 2s infinite;
-  z-index: 100; /* Ensure it's on top */
-}
-
-@keyframes pulse-text {
-  0%, 100% { opacity: 0.6; }
-  50% { opacity: 1; }
-}
-
-/* Ensure overlay is on top */
-.sacred-confirmation-overlay {
-  z-index: 20;
-}
-/* src/pages/ResultPage.css */
-
-/* ... (keep all your existing styles) ... */
-
 /* AUTH LOADING OVERLAY */
 .auth-loading-overlay {
   position: absolute;
@@ -282,4 +252,8 @@
 /* Ensure the overlay is hidden when not loading */
 .auth-loading-overlay:empty {
   display: none;
+}
+
+.sacred-confirmation-overlay {
+  z-index: 20;
 }
