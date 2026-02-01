@@ -74,7 +74,7 @@
 .hs-download { left: 50%; width: 19%; height: 7%; }
 .hs-signout-li { left: 67.2%; width: 14%; height: 5%; }
 
-/* Slots - Calibrated for ritual-slots.webp */
+/* Slots - Calibrated for ritual-slots.webp 1920x1080 */
 .hs-slot-left { 
   left: 28.5%; 
   top: 50%; 
@@ -102,7 +102,7 @@
   cursor: pointer;
 }
 
-/* Hover effects */
+/* Hover effects for sacred feel */
 .hs-slot-left:hover, .hs-slot-center:hover, .hs-slot-right:hover {
   box-shadow: 0 0 30px rgba(0, 255, 157, 0.4);
   transform: translate(-50%, -50%) scale(1.05);
@@ -111,7 +111,8 @@
 /* Hub View Hotspots (Steam Slots page) */
 .hs-hub-home { left: 50%; top: 92%; width: 20%; height: 6%; }
 
-/* Hub portal hotspots - same positioning as slot buttons */
+/* New: Hub portal hotspots for steam-slots-hub.webp - Using CSS for positioning */
+/* These are positioned over the three circular displays in the hub image */
 .hs-hub-left { 
   left: 28.5%; 
   top: 50%; 
@@ -136,12 +137,14 @@
   border-radius: 50%;
 }
 
+/* Hover effect to show interactivity for hub portals */
 .hs-hub-left:hover, .hs-hub-center:hover, .hs-hub-right:hover {
-  background: rgba(0, 255, 157, 0.1);
+  background: rgba(0, 255, 157, 0.1); /* Slight green tint on hover */
   box-shadow: 0 0 20px rgba(0, 255, 157, 0.2);
 }
 
-/* PRIZE OVERLAYS */
+
+/* PRIZE OVERLAYS - FIXED POSITIONING */
 .prize-shelf-text {
   position: absolute;
   left: 50.1%;
@@ -224,24 +227,18 @@
   100% { opacity: 0.4; }
 }
 
-/* AUTH LOADING OVERLAY */
-.auth-loading-overlay {
-  position: absolute;
-  inset: 0;
-  background: rgba(5, 8, 16, 0.85); /* Dark semi-transparent */
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 100; /* Above everything else */
-  pointer-events: none; /* Let clicks pass through if needed, though we disable buttons anyway */
-}
-
+/* Loading Spinner for Auth State */
 .loading-spinner {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
   color: #00ff9d;
   font-family: 'Courier New', monospace;
   font-size: 1.2rem;
   text-shadow: 0 0 10px #00ff9d;
   animation: pulse-text 2s infinite;
+  z-index: 100; /* Ensure it's on top */
 }
 
 @keyframes pulse-text {
@@ -249,11 +246,7 @@
   50% { opacity: 1; }
 }
 
-/* Ensure the overlay is hidden when not loading */
-.auth-loading-overlay:empty {
-  display: none;
-}
-
+/* Ensure overlay is on top */
 .sacred-confirmation-overlay {
   z-index: 20;
 }

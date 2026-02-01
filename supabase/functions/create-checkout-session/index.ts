@@ -1,65 +1,85 @@
 import Stripe from 'npm:stripe@14.0.0';
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.0';
 
 const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY')!, {
   apiVersion: '2023-10-16',
 });
 
+const supabase = createClient(
+  Deno.env.get('SUPABASE_URL')!,
+  Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+);
+
+const PRICE_MAP = {
+  'prize-6': 'price_6_monthly',    // Replace with real Stripe Price ID
+  'prize-3': 'price_36_annual'     // Replace with real Stripe Price ID
+};
+
 serve(async (req) => {
-  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
-  if (req.method !== 'POST') return new Response('Method not allowed', { status: 405, headers: corsHeaders });
+  const corsHeaders = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  };
+
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: corsHeaders });
+  }
 
   try {
-    const authHeader = req.headers.get('Authorization') || '';
-    const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
-    if (!token) throw new Error('Missing Authorization token');
+    const { user_id, tier, return_url } = await req.json();
+    
+    if (!user_id || !PRICE_MAP[tier as keyof typeof PRICE_MAP]) {
+      throw new Error('Invalid user or tier');
+    }
 
-    const supabase = createClient(
-      Deno.env.get('SUPABASE_URL')!,
-      Deno.env.get('SUPABASE_ANON_KEY')!,
-      { global: { headers: { Authorization: `Bearer ${token}` } } }
-    );
+    // Get or create Stripe customer
+    const { data: userData } = await supabase
+      .from('user_streaks')
+      .select('stripe_customer_id')
+      .eq('user_id', user_id)
+      .single();
 
-    const { data: userRes, error: userErr } = await supabase.auth.getUser(token);
-    if (userErr || !userRes?.user) throw new Error('Invalid user session');
+    let customerId = userData?.stripe_customer_id;
 
-    const { tier, return_url } = await req.json();
-    if (!return_url) throw new Error('Missing return_url');
-
-    const price =
-      tier === 'prize-6' ? Deno.env.get('STRIPE_PRICE_MONTHLY') :
-      tier === 'prize-3' ? Deno.env.get('STRIPE_PRICE_ANNUAL') :
-      null;
-
-    if (!price) throw new Error('Invalid tier');
-
-    const user = userRes.user;
+    if (!customerId) {
+      const customer = await stripe.customers.create({
+        metadata: { supabase_user_id: user_id }
+      });
+      customerId = customer.id;
+      
+      await supabase
+        .from('user_streaks')
+        .update({ stripe_customer_id: customerId })
+        .eq('user_id', user_id);
+    }
 
     const session = await stripe.checkout.sessions.create({
+      customer: customerId,
       mode: 'subscription',
       payment_method_types: ['card'],
-      line_items: [{ price, quantity: 1 }],
-      client_reference_id: user.id,
-      success_url: `${return_url}?success=true&tier=${encodeURIComponent(tier)}&session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${return_url}?canceled=true&tier=${encodeURIComponent(tier)}`,
-      metadata: { user_id: user.id, tier },
-      subscription_data: { metadata: { user_id: user.id, tier } },
+      line_items: [{
+        price: PRICE_MAP[tier as keyof typeof PRICE_MAP],
+        quantity: 1
+      }],
+      success_url: `${return_url}?success=true&session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${return_url}?canceled=true`,
+      metadata: {
+        user_id,
+        tier,
+        platform: '4b4ku5'
+      }
     });
 
-    return new Response(JSON.stringify({ url: session.url }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      status: 200,
-    });
+    return new Response(
+      JSON.stringify({ url: session.url }),
+      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
+
   } catch (err) {
-    return new Response(JSON.stringify({ error: (err as Error).message }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      status: 400,
-    });
+    return new Response(
+      JSON.stringify({ error: (err as Error).message }),
+      { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
   }
 });
