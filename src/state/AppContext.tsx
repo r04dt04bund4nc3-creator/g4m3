@@ -4,6 +4,7 @@ import type { ReactNode } from 'react';
 import { supabase } from '../lib/supabaseClient';
 import type { Session, AuthError } from '@supabase/supabase-js';
 
+// ... (Interfaces remain the same) ...
 interface AudioState {
   file: File | null;
   audioBuffer: AudioBuffer | null;
@@ -30,7 +31,7 @@ interface AuthState {
 
 interface AppContextType {
   audio: AudioState;
-  state: AudioState;
+  state: AudioState; // Kept for backward compatibility
   ritual: RitualState;
   auth: AuthState;
   setFile: (file: File) => void;
@@ -46,7 +47,7 @@ interface AppContextType {
   reset: () => void;
   signInWithDiscord: () => Promise<void>;
   signInWithGoogle: () => Promise<void>;
-  signInWithX: () => Promise<void>; // ✅ NEW
+  signInWithX: () => Promise<void>;
   signInWithEmail: (email: string, password: string) => Promise<{ error: AuthError | null }>;
   signOut: () => Promise<void>;
   savePerformance: (gestureData: any, trackName: string, trackHash: string) => Promise<void>;
@@ -78,6 +79,7 @@ const initialAuthState: AuthState = {
 
 const AppContext = createContext<AppContextType | null>(null);
 
+// Helper for storage
 const blobToDataURL = (blob: Blob) =>
   new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
@@ -87,13 +89,18 @@ const blobToDataURL = (blob: Blob) =>
   });
 
 const dataURLToBlob = (dataUrl: string) => {
-  const [meta, base64] = dataUrl.split(',');
-  const mime = /data:(.*?);/.exec(meta)?.[1] ?? 'application/octet-stream';
-  const binary = atob(base64);
-  const len = binary.length;
-  const bytes = new Uint8Array(len);
-  for (let i = 0; i < len; i++) bytes[i] = binary.charCodeAt(i);
-  return new Blob([bytes], { type: mime });
+  try {
+    const [meta, base64] = dataUrl.split(',');
+    const mime = /data:(.*?);/.exec(meta)?.[1] ?? 'application/octet-stream';
+    const binary = atob(base64);
+    const len = binary.length;
+    const bytes = new Uint8Array(len);
+    for (let i = 0; i < len; i++) bytes[i] = binary.charCodeAt(i);
+    return new Blob([bytes], { type: mime });
+  } catch (e) {
+    console.error("Failed to convert dataURL to blob", e);
+    return null;
+  }
 };
 
 export function AppProvider({ children }: { children: ReactNode }) {
@@ -110,12 +117,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const rec = sessionStorage.getItem('g4m3_recording_data_url');
       if (rec) {
         const blob = dataURLToBlob(rec);
-        setAudio(prev => ({ ...prev, recordingBlob: blob }));
+        if (blob) setAudio(prev => ({ ...prev, recordingBlob: blob }));
       }
       const fileName = sessionStorage.getItem('g4m3_filename');
       if (fileName) {
-        const file = new File([], fileName);
-        setAudio(prev => ({ ...prev, file }));
+        setAudio(prev => ({ ...prev, file: new File([], fileName) }));
       }
       const eq = sessionStorage.getItem('g4m3_final_eq');
       if (eq) {
@@ -127,13 +133,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
+    // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setAuth(prev => ({ ...prev, user: session?.user || null, isLoading: false, error: null }));
+      setAuth({ user: session?.user || null, isLoading: false, error: null });
+      if (session?.user) restorePostAuthState();
     });
 
+    // Check initial session
     supabase.auth.getSession().then(({ data: { session } }) => {
-      setAuth(prev => ({ ...prev, user: session?.user || null, isLoading: false, error: null }));
-      restorePostAuthState();
+      setAuth({ user: session?.user || null, isLoading: false, error: null });
+      if (session?.user) restorePostAuthState();
     });
 
     return () => {
@@ -145,7 +154,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
     try {
       if (audio.recordingBlob) {
         const dataUrl = await blobToDataURL(audio.recordingBlob);
-        sessionStorage.setItem('g4m3_recording_data_url', dataUrl);
+        // Safety check: Don't try to store if it's likely to crash sessionStorage
+        if (dataUrl.length < 4000000) { 
+          sessionStorage.setItem('g4m3_recording_data_url', dataUrl);
+        } else {
+          console.warn("Recording too large for sessionStorage. Consider IndexedDB.");
+        }
       }
       if (ritual.soundPrintDataUrl) {
         sessionStorage.setItem('g4m3_sound_print', ritual.soundPrintDataUrl);
@@ -158,130 +172,104 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
       sessionStorage.setItem('post-auth-redirect', 'result');
     } catch (e) {
-      console.warn('Persist before OAuth failed:', e);
+      console.warn('Persist before OAuth failed (likely quota exceeded):', e);
     }
   }, [audio.recordingBlob, audio.file?.name, ritual.soundPrintDataUrl, ritual.finalEQState]);
 
   const signInWithDiscord = useCallback(async () => {
-    try {
-      setAuth(prev => ({ ...prev, error: null }));
-      await persistBeforeOAuth();
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: 'discord',
-        options: { redirectTo: `${window.location.origin}/auth/callback` },
-      });
-      if (error) throw error;
-    } catch (err: any) {
-      setAuth(prev => ({ ...prev, error: err.message }));
-    }
+    setAuth(prev => ({ ...prev, error: null }));
+    await persistBeforeOAuth();
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'discord',
+      options: { redirectTo: `${window.location.origin}/auth/callback` },
+    });
+    if (error) setAuth(prev => ({ ...prev, error: error.message }));
   }, [persistBeforeOAuth]);
 
   const signInWithGoogle = useCallback(async () => {
-    try {
-      setAuth(prev => ({ ...prev, error: null }));
-      await persistBeforeOAuth();
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: { redirectTo: `${window.location.origin}/auth/callback` },
-      });
-      if (error) throw error;
-    } catch (err: any) {
-      setAuth(prev => ({ ...prev, error: err.message }));
-    }
+    setAuth(prev => ({ ...prev, error: null }));
+    await persistBeforeOAuth();
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo: `${window.location.origin}/auth/callback` },
+    });
+    if (error) setAuth(prev => ({ ...prev, error: error.message }));
   }, [persistBeforeOAuth]);
 
   const signInWithX = useCallback(async () => {
-    try {
-      setAuth(prev => ({ ...prev, error: null }));
-      await persistBeforeOAuth();
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: 'twitter',
-        options: { redirectTo: `${window.location.origin}/auth/callback` },
-      });
-      if (error) throw error;
-    } catch (err: any) {
-      setAuth(prev => ({ ...prev, error: err.message }));
-    }
+    setAuth(prev => ({ ...prev, error: null }));
+    await persistBeforeOAuth();
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'twitter',
+      options: { redirectTo: `${window.location.origin}/auth/callback` },
+    });
+    if (error) setAuth(prev => ({ ...prev, error: error.message }));
   }, [persistBeforeOAuth]);
 
   const signInWithEmail = useCallback(async (email: string, password: string) => {
     setAuth(prev => ({ ...prev, error: null }));
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) {
-      setAuth(prev => ({ ...prev, error: error.message }));
-    }
-    return { error };
+    const result = await supabase.auth.signInWithPassword({ email, password });
+    if (result.error) setAuth(prev => ({ ...prev, error: result.error.message }));
+    return result;
   }, []);
 
   const signOut = useCallback(async () => {
     const { error } = await supabase.auth.signOut();
     if (error) console.error('Sign out error:', error);
+    reset(); // Clean up state on signout
   }, []);
 
   const saveRecording = useCallback(async (blob: Blob, finalEQ: number[]) => {
     setAudio(prev => ({ ...prev, recordingBlob: blob }));
     setRitual(prev => ({ ...prev, finalEQState: finalEQ, phase: 'capture', isRecording: false }));
     try {
-      if (blob) {
-        const dataUrl = await blobToDataURL(blob);
+      const dataUrl = await blobToDataURL(blob);
+      if (dataUrl.length < 4000000) {
         sessionStorage.setItem('g4m3_recording_data_url', dataUrl);
       }
-      if (finalEQ?.length) {
-        sessionStorage.setItem('g4m3_final_eq', JSON.stringify(finalEQ));
-      }
+      sessionStorage.setItem('g4m3_final_eq', JSON.stringify(finalEQ));
     } catch (e) {
-      console.warn('Persist recording failed:', e);
+      console.warn('Persist recording locally failed:', e);
     }
   }, []);
 
   const captureSoundPrint = useCallback((dataUrl: string) => {
-    setRitual(prev => ({
-      ...prev,
-      soundPrintDataUrl: dataUrl,
-      phase: 'complete',
-    }));
+    setRitual(prev => ({ ...prev, soundPrintDataUrl: dataUrl, phase: 'complete' }));
     try {
-      if (dataUrl) {
-        sessionStorage.setItem('g4m3_sound_print', dataUrl);
-      }
+      sessionStorage.setItem('g4m3_sound_print', dataUrl);
     } catch (e) {
       console.warn('Persist sound print failed:', e);
     }
   }, []);
 
-  const setSoundPrint = useCallback((data: any) => {
-    if (data?.dataUrl) captureSoundPrint(data.dataUrl);
-  }, [captureSoundPrint]);
+  const savePerformance = useCallback(async (gestureData: any, trackName: string, trackHash: string) => {
+    // Optimization: Use context state instead of calling getUser() network request
+    if (!auth.user) {
+        console.error("Cannot save performance: No authenticated user.");
+        return;
+    }
 
-  const setFile = useCallback((file: File) => {
-    setAudio(prev => ({ ...prev, file, isProcessing: true }));
-  }, []);
-  const setAudioFile = setFile;
+    const { error } = await supabase.from('performances').insert({
+      user_id: auth.user.id,
+      track_name: trackName,
+      track_hash: trackHash,
+      gesture_data: gestureData,
+      thumbnail_data_url: ritual.soundPrintDataUrl,
+    });
 
+    if (error) console.error('Error saving performance:', error);
+  }, [auth.user, ritual.soundPrintDataUrl]);
+
+  // UI helpers
+  const setSoundPrint = useCallback((data: any) => { if (data?.dataUrl) captureSoundPrint(data.dataUrl); }, [captureSoundPrint]);
+  const setFile = useCallback((file: File) => { setAudio(prev => ({ ...prev, file, isProcessing: true })); }, []);
   const setAudioBuffer = useCallback((buffer: AudioBuffer) => {
-    setAudio(prev => ({
-      ...prev,
-      audioBuffer: buffer,
-      isProcessing: false,
-      duration: buffer.duration,
-    }));
+    setAudio(prev => ({ ...prev, audioBuffer: buffer, isProcessing: false, duration: buffer.duration }));
   }, []);
-
-  const setPlaying = useCallback((playing: boolean) => {
-    setAudio(prev => ({ ...prev, isPlaying: playing }));
-  }, []);
-
-  const updateCurrentTime = useCallback((time: number) => {
-    setAudio(prev => ({ ...prev, currentTime: time }));
-  }, []);
-
-  const setRitualPhase = useCallback((phase: RitualState['phase']) => {
-    setRitual(prev => ({ ...prev, phase }));
-  }, []);
-
-  const setCountdown = useCallback((count: number) => {
-    setRitual(prev => ({ ...prev, countdown: count }));
-  }, []);
+  const setPlaying = useCallback((playing: boolean) => { setAudio(prev => ({ ...prev, isPlaying: playing })); }, []);
+  const updateCurrentTime = useCallback((time: number) => { setAudio(prev => ({ ...prev, currentTime: time })); }, []);
+  const setRitualPhase = useCallback((phase: RitualState['phase']) => { setRitual(prev => ({ ...prev, phase })); }, []);
+  const setCountdown = useCallback((count: number) => { setRitual(prev => ({ ...prev, countdown: count })); }, []);
 
   const reset = useCallback(() => {
     setAudio(initialAudioState);
@@ -292,36 +280,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
       sessionStorage.removeItem('g4m3_filename');
       sessionStorage.removeItem('g4m3_final_eq');
       sessionStorage.removeItem('post-auth-redirect');
-    } catch {
-      /* ignore */
-    }
+    } catch { /* ignore */ }
   }, []);
-
-  const savePerformance = useCallback(async (gestureData: any, trackName: string, trackHash: string) => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
-
-    const { error } = await supabase.from('performances').insert({
-      user_id: user.id,
-      track_name: trackName,
-      track_hash: trackHash,
-      gesture_data: gestureData,
-      thumbnail_data_url: ritual.soundPrintDataUrl,
-    });
-
-    if (error) {
-      console.error('Error saving performance:', error);
-    }
-  }, [ritual.soundPrintDataUrl]);
 
   return (
     <AppContext.Provider value={{
       audio,
-      state: audio,
+      state: audio, // Backward compatibility
       ritual,
       auth,
       setFile,
-      setAudioFile,
+      setAudioFile: setFile,
       setAudioBuffer,
       setPlaying,
       updateCurrentTime,
@@ -333,7 +302,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       reset,
       signInWithDiscord,
       signInWithGoogle,
-      signInWithX, // ✅ ✅ ✅
+      signInWithX,
       signInWithEmail,
       signOut,
       savePerformance,
