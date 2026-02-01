@@ -65,7 +65,7 @@ type StreakState = {
 
 // Timing
 const REVEAL_DELAY_MS = 2000;
-const MONTHLY_TIMEOUT_MS = 20000; 
+const MONTHLY_TIMEOUT_MS = 20000;
 const ANNUAL_TIMEOUT_MS = 30000;
 
 const PRIZE_TEXTS = {
@@ -88,6 +88,7 @@ const PRIZE_TEXTS = {
 const ResultPage: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
+
   // Using useApp context to get auth state
   const { state, ritual, auth, signOut, reset, signInWithDiscord, signInWithGoogle } = useApp();
   const { trackEvent } = useAnalytics();
@@ -108,17 +109,6 @@ const ResultPage: React.FC = () => {
     nftClaimed: false,
     subscriptionActive: false,
   });
-
-  // 🚨 CRITICAL FIX: Wait for auth to initialize before rendering the page content
-  // This prevents the login loop/black screen by ensuring `auth.user` is reliable
-  // and all context is ready.
-  if (auth.isLoading) {
-    return (
-      <div className="res-page-root">
-        <div className="loading-spinner">SYNCING ASTRAL SIGNAL...</div>
-      </div>
-    );
-  }
 
   const isLoggedIn = !!auth.user?.id;
 
@@ -147,13 +137,17 @@ const ResultPage: React.FC = () => {
       setIsConfirmed(true);
       setView('hub');
       setTimeout(() => {
-        try { window.history.replaceState({}, '', '/result'); } catch {}
+        try {
+          window.history.replaceState({}, '', '/result');
+        } catch {}
       }, 1500);
       setTimeout(() => setIsConfirmed(false), 4000);
     }
 
     if (canceled) {
-      try { window.history.replaceState({}, '', '/result'); } catch {}
+      try {
+        window.history.replaceState({}, '', '/result');
+      } catch {}
       setView('summary');
     }
   }, [location.search]);
@@ -261,11 +255,11 @@ const ResultPage: React.FC = () => {
     } finally {
       setLoadingStreak(false);
     }
-  }, [auth.user?.id]); // Dependency on auth.user?.id to refetch on login/logout
+  }, [auth.user?.id]);
 
   useEffect(() => {
     if (auth.user?.id) fetchStreak(); // Fetch streak only if user is logged in
-  }, [auth.user?.id, fetchStreak]); // Re-run if user changes or fetchStreak changes
+  }, [auth.user?.id, fetchStreak]);
 
   const effectiveBlob = state.recordingBlob ?? recoveredBlob ?? null;
   const currentPrint = ritual.soundPrintDataUrl || recoveredPrint;
@@ -274,7 +268,11 @@ const ResultPage: React.FC = () => {
     async (provider: 'discord' | 'google') => {
       trackEvent('social_login_attempt', { provider });
       if (state.recordingBlob) {
-        try { await saveBlob(RECOVERY_BLOB_KEY, state.recordingBlob); } catch (e) { console.warn(e); }
+        try {
+          await saveBlob(RECOVERY_BLOB_KEY, state.recordingBlob);
+        } catch (e) {
+          console.warn(e);
+        }
       }
       if (ritual.soundPrintDataUrl) {
         sessionStorage.setItem(RECOVERY_PRINT_KEY, ritual.soundPrintDataUrl);
@@ -303,24 +301,24 @@ const ResultPage: React.FC = () => {
     setView('slots');
   }, [effectiveBlob, trackEvent]);
 
-  const handleClaim = async () => {
+  const handleClaim = useCallback(async () => {
     if (!auth.user?.id) return;
     setClaiming(true);
-  
+
     try {
       // 1. Run the claim hook (logging/logic in lib/manifold)
       await claimRitualArtifact(auth.user.id);
-  
+
       // 2. Mark NFT as claimed in your Supabase DB
       await supabase
         .from('user_streaks')
         .update({ nft_claimed: true })
         .eq('user_id', auth.user.id);
-  
+
       // 3. Update local state to show 'ARTIFACT SECURED'
       setStreak(prev => ({ ...prev, nftClaimed: true }));
       trackEvent('nft_claimed', { day: 6 });
-  
+
       // 4. Open the Manifold page in a new tab
       openManifold('claim');
     } catch (e) {
@@ -329,7 +327,8 @@ const ResultPage: React.FC = () => {
     } finally {
       setClaiming(false);
     }
-  };
+  }, [auth.user?.id, openManifold, trackEvent]);
+
   const handleStripeCheckout = useCallback(
     async (tier: 'prize-6' | 'prize-3') => {
       if (!auth.user?.id) {
@@ -346,7 +345,11 @@ const ResultPage: React.FC = () => {
         const res = await fetch(endpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ tier, user_id: auth.user.id, return_url: `${window.location.origin}/result` }),
+          body: JSON.stringify({
+            tier,
+            user_id: auth.user.id,
+            return_url: `${window.location.origin}/result`,
+          }),
         });
 
         const contentType = res.headers.get('content-type');
@@ -372,8 +375,15 @@ const ResultPage: React.FC = () => {
     [auth.user?.id, checkoutBusy, trackEvent]
   );
 
-  const goHome = useCallback(() => { reset(); navigate('/'); }, [navigate, reset]);
-  const handleSignOut = useCallback(async () => { await signOut(); navigate('/'); }, [navigate, signOut]);
+  const goHome = useCallback(() => {
+    reset();
+    navigate('/');
+  }, [navigate, reset]);
+
+  const handleSignOut = useCallback(async () => {
+    await signOut();
+    navigate('/');
+  }, [navigate, signOut]);
 
   const dayText = useMemo(() => {
     if (loadingStreak) return 'ALIGNING PLANETARY GEARS...';
@@ -383,6 +393,92 @@ const ResultPage: React.FC = () => {
     }
     return `DAY ${streak.day} OF 6: RETURN TOMORROW TO STRENGTHEN THE SIGNAL.`;
   }, [streak, loadingStreak]);
+
+  // ---- Prize renderer ----
+  const renderPrizeScreen = (tier: '6' | '3' | '0') => {
+    const imgSrc = tier === '6' ? prize6 : tier === '3' ? prize3 : prize0;
+    const showClaimBtn = tier === '0' && streak.day === 6 && !streak.nftClaimed;
+    const textData = tier === '6' ? PRIZE_TEXTS[6] : tier === '3' ? PRIZE_TEXTS[3] : null;
+
+    const handleClick = () => {
+      if (!canProceed) return;
+      if (showClaimBtn) return; // Claim button has its own click handler
+      if (tier === '6') return handleStripeCheckout('prize-6');
+      if (tier === '3') return handleStripeCheckout('prize-3');
+      setView('hub'); // Fallback for $0 to go to hub
+    };
+
+    return (
+      <div
+        className="res-page-root"
+        onClick={handleClick}
+        style={{ cursor: canProceed && !showClaimBtn ? 'pointer' : 'default' }}
+      >
+        <div className="res-machine-container">
+          <img src={imgSrc} className="res-background-image" alt="Prize" />
+          {tier === '0' && <div className="prize-shelf-text legacy">{dayText}</div>}
+          {textData && (
+            <div className="prize-shelf-text sacred-text-container">
+              <h2 className="sacred-title">{textData.title}</h2>
+              <div className="sacred-headline">{textData.headline}</div>
+              <p className="sacred-body">{textData.body}</p>
+              <p className="sacred-scarcity">{textData.scarcity}</p>
+              {tier === '3' && canProceed && (
+                <div className="auto-redirect-warning">
+                  Returning to hub in {Math.round(ANNUAL_TIMEOUT_MS / 1000)}s...
+                </div>
+              )}
+              {tier === '6' && canProceed && (
+                <div className="auto-redirect-warning">
+                  Returning to hub in {Math.round(MONTHLY_TIMEOUT_MS / 1000)}s...
+                </div>
+              )}
+              <div className="sacred-cta">
+                {checkoutBusy ? 'OPENING CHECKOUT...' : textData.cta}
+              </div>
+            </div>
+          )}
+          {showClaimBtn && canProceed && (
+            <div className="claim-container">
+              <button
+                className="manifold-claim-btn"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleClaim();
+                }}
+                disabled={claiming}
+              >
+                {claiming ? 'OPENING PORTAL...' : 'CLAIM ARTIFACT'}
+              </button>
+              <div
+                className="claim-subtext"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setView('hub');
+                }}
+              >
+                or return to hub
+              </div>
+            </div>
+          )}
+          {canProceed && !showClaimBtn && !textData && (
+            <div className="tap-continue-hint">Tap to continue</div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  // 🚨 AUTH LOADING GATE
+  // NOTE: This comes AFTER all hooks above so that hooks are
+  // called in the same order on every render.
+  if (auth.isLoading) {
+    return (
+      <div className="res-page-root">
+        <div className="loading-spinner">SYNCING ASTRAL SIGNAL...</div>
+      </div>
+    );
+  }
 
   // HUB VIEW
   if (view === 'hub') {
@@ -399,19 +495,36 @@ const ResultPage: React.FC = () => {
                   The offering is received.
                   <br />
                   Monthly claims are now open.
-                  {/* FIX: Use subscriptionTier here to resolve the TypeScript warning */}
-                  {subscriptionTier && <><br />Tier: {subscriptionTier}</>} 
+                  {subscriptionTier && (
+                    <>
+                      <br />
+                      Tier: {subscriptionTier}
+                    </>
+                  )}
                 </p>
-                <button className="confirmation-cta" onClick={() => setIsConfirmed(false)}>Continue</button>
+                <button className="confirmation-cta" onClick={() => setIsConfirmed(false)}>
+                  Continue
+                </button>
               </div>
             )}
 
-            {/* Hub Portal Hitboxes - All open Manifold. Using CSS for positioning. */}
             {!isConfirmed && (
               <>
-                <button className="hs hs-hub-left" onClick={() => openManifold('hub-left')} aria-label="Open artifact portal left" />
-                <button className="hs hs-hub-center" onClick={() => openManifold('hub-center')} aria-label="Open artifact portal center" />
-                <button className="hs hs-hub-right" onClick={() => openManifold('hub-right')} aria-label="Open artifact portal right" />
+                <button
+                  className="hs hs-hub-left"
+                  onClick={() => openManifold('hub-left')}
+                  aria-label="Open artifact portal left"
+                />
+                <button
+                  className="hs hs-hub-center"
+                  onClick={() => openManifold('hub-center')}
+                  aria-label="Open artifact portal center"
+                />
+                <button
+                  className="hs hs-hub-right"
+                  onClick={() => openManifold('hub-right')}
+                  aria-label="Open artifact portal right"
+                />
               </>
             )}
             <button className="hs hs-hub-home" onClick={goHome} aria-label="Return Home" />
@@ -428,9 +541,21 @@ const ResultPage: React.FC = () => {
         <div className="res-machine-container">
           <img src={ritualSlots} className="res-background-image" alt="Slot Ritual" />
           <div className="res-interactive-layer">
-            <button className="hs hs-slot-left" onClick={() => setView('prize-0')} aria-label="$0 Reward" />
-            <button className="hs hs-slot-center" onClick={() => setView('prize-6')} aria-label="$6 Subscription" />
-            <button className="hs hs-slot-right" onClick={() => setView('prize-3')} aria-label="$3 Subscription" />
+            <button
+              className="hs hs-slot-left"
+              onClick={() => setView('prize-0')}
+              aria-label="$0 Reward"
+            />
+            <button
+              className="hs hs-slot-center"
+              onClick={() => setView('prize-6')}
+              aria-label="$6 Subscription"
+            />
+            <button
+              className="hs hs-slot-right"
+              onClick={() => setView('prize-3')}
+              aria-label="$3 Subscription"
+            />
           </div>
         </div>
       </div>
@@ -438,53 +563,6 @@ const ResultPage: React.FC = () => {
   }
 
   // PRIZE VIEWS
-  const renderPrizeScreen = (tier: '6' | '3' | '0') => {
-    const imgSrc = tier === '6' ? prize6 : tier === '3' ? prize3 : prize0;
-    const showClaimBtn = tier === '0' && streak.day === 6 && !streak.nftClaimed;
-    const textData = tier === '6' ? PRIZE_TEXTS[6] : tier === '3' ? PRIZE_TEXTS[3] : null;
-
-    const handleClick = () => {
-      if (!canProceed) return;
-      if (showClaimBtn) return; // Claim button has its own click handler
-      if (tier === '6') return handleStripeCheckout('prize-6');
-      if (tier === '3') return handleStripeCheckout('prize-3');
-      setView('hub'); // Fallback for $0 to go to hub
-    };
-
-    return (
-      <div className="res-page-root" onClick={handleClick} style={{ cursor: canProceed && !showClaimBtn ? 'pointer' : 'default' }}>
-        <div className="res-machine-container">
-          <img src={imgSrc} className="res-background-image" alt="Prize" />
-          {tier === '0' && <div className="prize-shelf-text legacy">{dayText}</div>}
-          {textData && (
-            <div className="prize-shelf-text sacred-text-container">
-              <h2 className="sacred-title">{textData.title}</h2>
-              <div className="sacred-headline">{textData.headline}</div>
-              <p className="sacred-body">{textData.body}</p>
-              <p className="sacred-scarcity">{textData.scarcity}</p>
-              {tier === '3' && canProceed && (
-                <div className="auto-redirect-warning">Returning to hub in {Math.round(ANNUAL_TIMEOUT_MS / 1000)}s...</div>
-              )}
-              {tier === '6' && canProceed && (
-                <div className="auto-redirect-warning">Returning to hub in {Math.round(MONTHLY_TIMEOUT_MS / 1000)}s...</div>
-              )}
-              <div className="sacred-cta">{checkoutBusy ? 'OPENING CHECKOUT...' : textData.cta}</div>
-            </div>
-          )}
-          {showClaimBtn && canProceed && (
-            <div className="claim-container">
-              <button className="manifold-claim-btn" onClick={(e) => { e.stopPropagation(); handleClaim(); }} disabled={claiming}>
-                {claiming ? 'OPENING PORTAL...' : 'CLAIM ARTIFACT'}
-              </button>
-              <div className="claim-subtext" onClick={(e) => { e.stopPropagation(); setView('hub'); }}>or return to hub</div>
-            </div>
-          )}
-          {canProceed && !showClaimBtn && !textData && <div className="tap-continue-hint">Tap to continue</div>}
-        </div>
-      </div>
-    );
-  };
-
   if (view === 'prize-0') return renderPrizeScreen('0');
   if (view === 'prize-3') return renderPrizeScreen('3');
   if (view === 'prize-6') return renderPrizeScreen('6');
@@ -493,20 +571,45 @@ const ResultPage: React.FC = () => {
   return (
     <div className="res-page-root">
       <div className="res-machine-container">
-        <img src={isLoggedIn ? loggedInSkin : loggedOutSkin} className="res-background-image" alt="" draggable={false} />
-        <div className="res-visualizer-screen">{currentPrint && <img src={currentPrint} className="res-print-internal" alt="Sound Print" />}</div>
+        <img
+          src={isLoggedIn ? loggedInSkin : loggedOutSkin}
+          className="res-background-image"
+          alt=""
+          draggable={false}
+        />
+        <div className="res-visualizer-screen">
+          {currentPrint && (
+            <img src={currentPrint} className="res-print-internal" alt="Sound Print" />
+          )}
+        </div>
         <div className="res-interactive-layer">
           {isLoggedIn ? (
             <>
               <button className="hs hs-home-li" onClick={goHome} aria-label="Return Home" />
-              <button className="hs hs-download" onClick={downloadAndSpin} aria-label="Download & Spin" />
-              <button className="hs hs-signout-li" onClick={handleSignOut} aria-label="Sign Out" />
+              <button
+                className="hs hs-download"
+                onClick={downloadAndSpin}
+                aria-label="Download & Spin"
+              />
+              <button
+                className="hs hs-signout-li"
+                onClick={handleSignOut}
+                aria-label="Sign Out"
+              />
             </>
           ) : (
             <>
-              <button className="hs hs-discord" onClick={() => handleSocialLogin('discord')} aria-label="Login with Discord" />
+              <button
+                className="hs hs-discord"
+                onClick={() => handleSocialLogin('discord')}
+                aria-label="Login with Discord"
+              />
               <button className="hs hs-home-lo" onClick={goHome} aria-label="Return Home" />
-              <button className="hs hs-google" onClick={() => handleSocialLogin('google')} aria-label="Login with Google" />
+              <button
+                className="hs hs-google"
+                onClick={() => handleSocialLogin('google')}
+                aria-label="Login with Google"
+              />
             </>
           )}
         </div>
