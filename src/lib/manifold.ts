@@ -1,44 +1,61 @@
 // src/lib/manifold.ts
 import { supabase } from './supabaseClient';
+
+// Public paid mint page (for non-subscribers or general visitors)
 export const MANIFOLD_NFT_URL = 'https://manifold.xyz/@r41nb0w/id/4078311664';
 
 // ---------------------------------------------------------
-// 1. NFT SCHEDULE
-// Paste your Manifold Claim Page URLs here in order.
-// Index 0 = The first one they get. Index 1 = The one they get a month later.
+// 1. NFT SCHEDULE (FREE CLAIM PAGES)
+// These URLs point to the gated free pages for subscribers.
+// We append the claim code automatically.
 // ---------------------------------------------------------
 const NFT_SCHEDULE = [
-  'https://app.manifold.xyz/c/REPLACE_WITH_YOUR_LINK_1', // NFT #1 (Start)
-  'https://app.manifold.xyz/c/REPLACE_WITH_YOUR_LINK_2', // NFT #2 (Month 2)
-  'https://app.manifold.xyz/c/REPLACE_WITH_YOUR_LINK_3', // NFT #3 (Month 3)
-  // Add more as you mint them...
+  'https://manifold.xyz/@r41nb0w/id/4080670960', // NFT #1 (Free Subscriber Page)
+  'https://manifold.xyz/@r41nb0w/id/REPLACE_WITH_MONTH_2_ID', // NFT #2
+  'https://manifold.xyz/@r41nb0w/id/REPLACE_WITH_MONTH_3_ID', // NFT #3
+];
+
+// The codes you set in Manifold for each month
+const CLAIM_CODES = [
+  '4B4KU5SUB001', // Month 1
+  '4B4KU5SUB002', // Month 2
+  '4B4KU5SUB003', // Month 3
 ];
 
 // Fallback if they run out of scheduled NFTs
 const MANIFOLD_PROFILE_URL = 'https://manifold.xyz/@r41nb0w';
+
+/**
+ * Appends the claim code to the Manifold URL so the user doesn't have to type it.
+ */
+function buildAuthenticatedUrl(baseUrl: string, index: number) {
+  const code = CLAIM_CODES[index];
+  if (!code) return baseUrl;
+  
+  // Manifold typically uses ?claimcode= or ?code= 
+  // Based on their "Claim Code" workflow, it is usually ?code=
+  const separator = baseUrl.includes('?') ? '&' : '?';
+  return `${baseUrl}${separator}code=${code}`;
+}
 
 export async function claimRitualArtifact(userId: string) {
   console.log('Processing Claim for:', userId);
 
   try {
     // 1. GET HISTORY
-    // Count how many artifacts this user has collected
     const { data: claims, error: fetchError } = await supabase
       .from('user_claims')
-      .select('claimed_at, month_id') // month_id stores "nft-0", "nft-1"
+      .select('claimed_at, month_id')
       .eq('user_id', userId)
-      .order('claimed_at', { ascending: false }); // Newest first
+      .order('claimed_at', { ascending: false });
 
     if (fetchError) throw fetchError;
 
     const claimCount = claims?.length || 0;
-    const lastClaim = claims?.[0]; // The most recent one
+    const lastClaim = claims?.[0];
 
-    // 2. CHECK COOLDOWN (The "One per Month" Rule)
-    // If they claimed recently, we don't give them the NEXT one yet.
-    // We give them the CURRENT one (idempotency) in case they lost the link.
-    
-    const MIN_DAYS_BETWEEN_CLAIMS = 25; // slightly less than a month to be forgiving
+    // 2. CHECK COOLDOWN (25 days)
+    const MIN_DAYS_BETWEEN_CLAIMS = 25;
     let isTooSoon = false;
 
     if (lastClaim) {
@@ -55,15 +72,14 @@ export async function claimRitualArtifact(userId: string) {
     // 3. DETERMINE WHICH LINK TO GIVE
     let targetIndex = claimCount; 
 
-    // If it's too soon to move to the next tier, return the PREVIOUS tier link
-    // so they can finish minting if they missed it.
     if (isTooSoon && claimCount > 0) {
       targetIndex = claimCount - 1;
+      const rawUrl = NFT_SCHEDULE[targetIndex] || MANIFOLD_PROFILE_URL;
+      const authUrl = buildAuthenticatedUrl(rawUrl, targetIndex);
       
-      const safeUrl = NFT_SCHEDULE[targetIndex] || MANIFOLD_PROFILE_URL;
       return {
         success: true,
-        claimUrl: safeUrl,
+        claimUrl: authUrl,
         message: "Retrieving your current monthly artifact..."
       };
     }
@@ -72,28 +88,29 @@ export async function claimRitualArtifact(userId: string) {
     const nextNftUrl = NFT_SCHEDULE[targetIndex];
 
     if (!nextNftUrl) {
-      return { success: true, claimUrl: MANIFOLD_PROFILE_URL, message: "You have collected all currently available artifacts!" };
+      return { 
+        success: true, 
+        claimUrl: MANIFOLD_PROFILE_URL, 
+        message: "You have collected all currently available artifacts!" 
+      };
     }
 
-    // 5. RECORD THE NEW CLAIM (Only if we moved up an index)
-    // We create a unique ID based on the index (e.g., "nft-0", "nft-1")
+    // 5. RECORD THE NEW CLAIM
     const distinctId = `nft-${targetIndex}`;
-
-    // Double check we haven't written this ID before (extra safety)
     const { error: insertError } = await supabase
       .from('user_claims')
-      .insert([
-        { user_id: userId, month_id: distinctId }
-      ]);
+      .insert([{ user_id: userId, month_id: distinctId }]);
 
-    // If duplicate error (23505), it means they clicked twice fast. Just let them through.
     if (insertError && insertError.code !== '23505') {
         console.error('DB Error:', insertError);
     }
 
+    // BUILD THE AUTHENTICATED URL
+    const finalUrl = buildAuthenticatedUrl(nextNftUrl, targetIndex);
+
     return {
       success: true,
-      claimUrl: nextNftUrl
+      claimUrl: finalUrl
     };
 
   } catch (err) {
