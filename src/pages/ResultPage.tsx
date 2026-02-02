@@ -145,90 +145,93 @@ const ResultPage: React.FC = () => {
   // This cannot fail. If user is subscribed, they go to hub.
   useEffect(() => {
     if (auth.user?.id && streak.subscriptionActive && view !== 'hub') {
-      console.log("✅ Active subscription detected: Auto redirecting to Hub view");
+      console.log('✅ Active subscription detected: Auto redirecting to Hub view');
       setView('hub');
     }
   }, [streak.subscriptionActive, auth.user?.id]);
 
   // Fetch streak (runs when auth.user?.id changes)
-  const fetchStreak = useCallback(async (forceRefresh = false): Promise<StreakState | null> => {
-    if (!auth.user?.id) return null;
-    
-    if (!forceRefresh) {
-      setLoadingStreak(true);
-    }
-    
-    const today = new Date().toISOString().split('T')[0];
+  const fetchStreak = useCallback(
+    async (forceRefresh = false): Promise<StreakState | null> => {
+      if (!auth.user?.id) return null;
 
-    try {
-      let { data, error } = await supabase
-        .from('user_streaks')
-        .select('*')
-        .eq('user_id', auth.user.id)
-        .single();
-
-      if (error && (error as any).code === 'PGRST116') {
-        // No streak found, create a new one
-        const { data: newData, error: insertError } = await supabase
-          .from('user_streaks')
-          .insert({
-            user_id: auth.user.id,
-            current_day: 1,
-            last_visit: today,
-            total_visits: 1,
-            subscription_tier: null,
-            subscription_status: null,
-            nft_claimed: false,
-          })
-          .select()
-          .single();
-        if (insertError) throw insertError;
-        data = newData;
-      } else if (data) {
-        // Streak found, update if needed
-        let newDay = data.current_day;
-
-        if (data.last_visit !== today) {
-          // Calendar-day diff (not 24h periods)
-          const lastVisitDate = new Date(data.last_visit);
-          const todayDate = new Date(today);
-          const timeDiff = todayDate.getTime() - lastVisitDate.getTime();
-          const diffDays = Math.floor(timeDiff / (1000 * 3600 * 24));
-
-          if (diffDays === 1) newDay = Math.min(data.current_day + 1, 6);
-          else if (diffDays > 1) newDay = 1;
-
-          await supabase
-            .from('user_streaks')
-            .update({
-              current_day: newDay,
-              last_visit: today,
-              total_visits: data.total_visits + 1,
-            })
-            .eq('user_id', auth.user.id);
-
-          data.current_day = newDay;
-        }
+      if (!forceRefresh) {
+        setLoadingStreak(true);
       }
 
-      const next: StreakState = {
-        day: data?.current_day || 1,
-        lastDate: data?.last_visit || today,
-        nftClaimed: data?.nft_claimed || false,
-        subscriptionActive: data?.subscription_status === 'active',
-      };
+      const today = new Date().toISOString().split('T')[0];
 
-      setStreak(next);
-      return next;
-    } catch (err) {
-      console.error('Streak sync error:', err);
-      const safe = defaultStreakState();
-      setStreak(safe);
-      return null;
-    } finally {
-      setLoadingStreak(false);
-    }
-  }, [auth.user?.id, defaultStreakState]);
+      try {
+        let { data, error } = await supabase
+          .from('user_streaks')
+          .select('*')
+          .eq('user_id', auth.user.id)
+          .single();
+
+        if (error && (error as any).code === 'PGRST116') {
+          // No streak found, create a new one
+          const { data: newData, error: insertError } = await supabase
+            .from('user_streaks')
+            .insert({
+              user_id: auth.user.id,
+              current_day: 1,
+              last_visit: today,
+              total_visits: 1,
+              subscription_tier: null,
+              subscription_status: null,
+              nft_claimed: false,
+            })
+            .select()
+            .single();
+          if (insertError) throw insertError;
+          data = newData;
+        } else if (data) {
+          // Streak found, update if needed
+          let newDay = data.current_day;
+
+          if (data.last_visit !== today) {
+            // Calendar-day diff (not 24h periods)
+            const lastVisitDate = new Date(data.last_visit);
+            const todayDate = new Date(today);
+            const timeDiff = todayDate.getTime() - lastVisitDate.getTime();
+            const diffDays = Math.floor(timeDiff / (1000 * 3600 * 24));
+
+            if (diffDays === 1) newDay = Math.min(data.current_day + 1, 6);
+            else if (diffDays > 1) newDay = 1;
+
+            await supabase
+              .from('user_streaks')
+              .update({
+                current_day: newDay,
+                last_visit: today,
+                total_visits: data.total_visits + 1,
+              })
+              .eq('user_id', auth.user.id);
+
+            data.current_day = newDay;
+          }
+        }
+
+        const next: StreakState = {
+          day: data?.current_day || 1,
+          lastDate: data?.last_visit || today,
+          nftClaimed: data?.nft_claimed || false,
+          subscriptionActive: data?.subscription_status === 'active',
+        };
+
+        setStreak(next);
+        return next;
+      } catch (err) {
+        console.error('Streak sync error:', err);
+        const safe = defaultStreakState();
+        setStreak(safe);
+        return null;
+      } finally {
+        setLoadingStreak(false);
+      }
+    },
+    [auth.user?.id, defaultStreakState]
+  );
 
   const isLoggedIn = !!auth.user?.id;
 
@@ -267,26 +270,24 @@ const ResultPage: React.FC = () => {
     }
 
     if (success) {
-      console.log("✅ Stripe success payment detected");
+      console.log('✅ Stripe success payment detected');
       sessionStorage.removeItem(PENDING_CHECKOUT_KEY);
 
       setSubscriptionTier(tierLabel(tier) || 'unknown');
       setIsFinalizing(false);
-      
+
       // 🚨 FIX: After successful payment, immediately force to hub view
       setView('hub');
-      
+
       // 🚨 FIX: Immediately assume subscription is active, so UI updates right away
-      // No need to wait for webhook. User just paid, they are a subscriber.
       setStreak(prev => ({
         ...prev,
-        subscriptionActive: true
-      }))
+        subscriptionActive: true,
+      }));
 
-      // 🚨 FIX: Show required confirmation banner, and keep it shown until user clicks Continue or claims NFT
-      if (!streak.nftClaimed) {
-        setIsConfirmed(true);
-      }
+      // 🚨 CHANGE: We no longer use the tiny CONFIRMED overlay as the "banner".
+      // We will show the purple claim banner until the NFT is claimed.
+      // So we don't need to setIsConfirmed(true) here.
 
       if (auth.user?.id) {
         // Refetch streak data to confirm
@@ -300,7 +301,7 @@ const ResultPage: React.FC = () => {
         } catch {}
       }, 500);
     }
-  }, [location.search, auth.user?.id, fetchStreak, streak.nftClaimed]);
+  }, [location.search, auth.user?.id, fetchStreak]);
 
   // Robust Stripe-return path (works even when Stripe returns to /result with NO params)
   useEffect(() => {
@@ -338,18 +339,15 @@ const ResultPage: React.FC = () => {
       if (cancelled) return;
 
       if (next?.subscriptionActive) {
-        // Confirmed active: show banner and stop polling
         sessionStorage.removeItem(PENDING_CHECKOUT_KEY);
-        
+
         setStreak(prev => ({
           ...prev,
-          subscriptionActive: true
-        }))
+          subscriptionActive: true,
+        }));
 
         setIsFinalizing(false);
-        if (!next.nftClaimed) {
-          setIsConfirmed(true);
-        }
+        // 🚨 CHANGE: Do NOT set isConfirmed here anymore; purple claim banner will handle it.
         return;
       }
 
@@ -470,18 +468,15 @@ const ResultPage: React.FC = () => {
     try {
       const result = await claimRitualArtifact(auth.user.id);
 
-      await supabase
-        .from('user_streaks')
-        .update({ nft_claimed: true })
-        .eq('user_id', auth.user.id);
+      await supabase.from('user_streaks').update({ nft_claimed: true }).eq('user_id', auth.user.id);
 
-      // 🚨 FIX: Once user claims NFT, hide the confirmation banner as requested
-      setStreak(prev => ({ 
-        ...prev, 
-        nftClaimed: true 
+      // Once user claims NFT, hide the purple banner (by setting nftClaimed=true)
+      setStreak(prev => ({
+        ...prev,
+        nftClaimed: true,
       }));
-      
-      // User has minted their NFT, hide confirmation banner
+
+      // Not used as banner anymore, but keep state consistent
       setIsConfirmed(false);
 
       trackEvent('nft_claimed', { day: streak.day, isSubscriber: streak.subscriptionActive });
@@ -562,25 +557,20 @@ const ResultPage: React.FC = () => {
   }, [navigate, signOut]);
 
   // ✅ FINAL FIXED TEXT LOGIC:
-  // Enforces your requirement PERFECTLY:
   // 1. If user is ANY paying subscriber: ALWAYS show subscription text, NEVER show day text
   // 2. "DAY X OF 6" text is ONLY allowed to appear on prize-0 screen. Nowhere else.
   const dayText = useMemo(() => {
     if (loadingStreak) return 'ALIGNING PLANETARY GEARS...';
-    
-    // #1 PRIORITY: Any active subscriber will ONLY see subscription text. Ever.
+
     if (streak.subscriptionActive) {
       if (streak.nftClaimed) return 'SUBSCRIPTION ACTIVE • COME BACK NEXT MONTH FOR YOUR NEXT ARTIFACT.';
       return 'SUBSCRIPTION ACTIVE • CLAIM YOUR MONTHLY ARTIFACT BELOW.';
     }
 
-    // #2 RULE: Consecutive day text CANNOT appear on slots or hub screens
-    // This text is ONLY allowed on prize-0 screen, per your request
     if (view !== 'prize-0') {
-      return "";
+      return '';
     }
 
-    // Only non-subscribers, on prize-0 screen, see streak text
     if (streak.day === 6) {
       if (streak.nftClaimed) return 'CYCLE COMPLETE. ARTIFACT SECURED.';
       return 'DAY 6 OF 6: THE GATE IS OPEN.';
@@ -593,8 +583,7 @@ const ResultPage: React.FC = () => {
   const renderPrizeScreen = (tier: '6' | '3' | '0') => {
     const imgSrc = tier === '6' ? prize6 : tier === '3' ? prize3 : prize0;
 
-    const showClaimBtn =
-      tier === '0' && !streak.nftClaimed && (streak.day === 6 || streak.subscriptionActive);
+    const showClaimBtn = tier === '0' && !streak.nftClaimed && (streak.day === 6 || streak.subscriptionActive);
 
     const textData = tier === '6' ? PRIZE_TEXTS[6] : tier === '3' ? PRIZE_TEXTS[3] : null;
 
@@ -607,18 +596,12 @@ const ResultPage: React.FC = () => {
     };
 
     return (
-      <div
-        className="res-page-root"
-        onClick={handleClick}
-        style={{ cursor: canProceed && !showClaimBtn ? 'pointer' : 'default' }}
-      >
+      <div className="res-page-root" onClick={handleClick} style={{ cursor: canProceed && !showClaimBtn ? 'pointer' : 'default' }}>
         <div className="res-machine-container">
           <img src={imgSrc} className="res-background-image" alt="Prize" />
-          
-          {tier === '0' && dayText && (
-            <div className="prize-shelf-text legacy">{dayText}</div>
-          )}
-          
+
+          {tier === '0' && dayText && <div className="prize-shelf-text legacy">{dayText}</div>}
+
           {textData && (
             <div className="prize-shelf-text sacred-text-container">
               <h2 className="sacred-title">{textData.title}</h2>
@@ -627,14 +610,10 @@ const ResultPage: React.FC = () => {
               <p className="sacred-scarcity">{textData.scarcity}</p>
 
               {tier === '3' && canProceed && (
-                <div className="auto-redirect-warning">
-                  Returning to hub in {Math.round(ANNUAL_TIMEOUT_MS / 1000)}s...
-                </div>
+                <div className="auto-redirect-warning">Returning to hub in {Math.round(ANNUAL_TIMEOUT_MS / 1000)}s...</div>
               )}
               {tier === '6' && canProceed && (
-                <div className="auto-redirect-warning">
-                  Returning to hub in {Math.round(MONTHLY_TIMEOUT_MS / 1000)}s...
-                </div>
+                <div className="auto-redirect-warning">Returning to hub in {Math.round(MONTHLY_TIMEOUT_MS / 1000)}s...</div>
               )}
 
               <div className="sacred-cta">{checkoutBusy ? 'OPENING CHECKOUT...' : textData.cta}</div>
@@ -665,9 +644,7 @@ const ResultPage: React.FC = () => {
             </div>
           )}
 
-          {canProceed && !showClaimBtn && !textData && (
-            <div className="tap-continue-hint">Tap to continue</div>
-          )}
+          {canProceed && !showClaimBtn && !textData && <div className="tap-continue-hint">Tap to continue</div>}
         </div>
       </div>
     );
@@ -686,23 +663,31 @@ const ResultPage: React.FC = () => {
   if (view === 'hub') {
     const showHubClaimButton = !streak.nftClaimed && (streak.day === 6 || streak.subscriptionActive);
 
+    // ✅ NEW: show the purple "CLAIM YOUR MONTHLY ARTIFACT" banner
+    // whenever a user is subscribed AND has not claimed yet.
+    const showSubscriberClaimBanner = streak.subscriptionActive && !streak.nftClaimed;
+
     return (
       <div className={`res-page-root ${isConfirmed ? 'confirmed-state' : ''}`}>
         <div className="res-machine-container">
           <img src={steamSlotsHub} className="res-background-image" alt="Steam Slots Hub" />
 
-          {/* Hub screen: Subscribers see subscription text. Non-subscribers on hub see no day text. */}
-          {dayText && (
-            <div className="prize-shelf-text legacy">{dayText}</div>
+          {dayText && <div className="prize-shelf-text legacy">{dayText}</div>}
+
+          {/* ✅ This is the REQUIRED persistent banner replacement:
+              It stays until the user claims (nftClaimed becomes true). */}
+          {showSubscriberClaimBanner && (
+            <div className="hub-claim-overlay">
+              <button className="manifold-claim-btn hub-btn" onClick={handleClaim} disabled={claiming}>
+                {claiming ? 'OPENING PORTAL...' : 'CLAIM YOUR MONTHLY ARTIFACT'}
+              </button>
+            </div>
           )}
 
-          {showHubClaimButton && (
+          {/* Keep existing hub claim button behavior for Day-6 non-subscribers (if you still want it) */}
+          {!showSubscriberClaimBanner && showHubClaimButton && (
             <div className="hub-claim-overlay">
-              <button
-                className="manifold-claim-btn hub-btn"
-                onClick={handleClaim}
-                disabled={claiming}
-              >
+              <button className="manifold-claim-btn hub-btn" onClick={handleClaim} disabled={claiming}>
                 {claiming ? 'OPENING PORTAL...' : 'CLAIM YOUR MONTHLY ARTIFACT'}
               </button>
             </div>
@@ -728,63 +713,25 @@ const ResultPage: React.FC = () => {
               </div>
             )}
 
-            {/* ✅ YOUR REQUIRED CONFIRMATION BANNER
-            Will appear after any successful payment.
-            Will automatically disappear once user mints their NFT. */}
-            {isConfirmed && !streak.nftClaimed && (
-              <div className="sacred-confirmation-overlay">
-                <div className="confirmation-sigil" />
-                <h1>CONFIRMED</h1>
-                <p>
-                  The offering is received.
-                  <br />
-                  Monthly claims are now open.
-                  {subscriptionTier && (
-                    <>
-                      <br />
-                      Tier: {subscriptionTier}
-                    </>
-                  )}
-                </p>
-                <button className="confirmation-cta" onClick={() => setIsConfirmed(false)}>
-                  Continue
-                </button>
-              </div>
-            )}
+            {/* 🔻 OLD tiny CONFIRMED overlay removed from rendering path:
+                You asked to replace this with the purple claim banner.
+                We keep state vars but do not render this overlay anymore. */}
 
-            {!isConfirmed && !isFinalizing && (
+            {!isFinalizing && (
               <>
                 <button
                   className="hs hs-hub-left"
-                  onClick={() =>
-                    window.open(
-                      'https://manifold.xyz/@r41nb0w/id/4078311664',
-                      '_blank',
-                      'noopener,noreferrer'
-                    )
-                  }
+                  onClick={() => window.open('https://manifold.xyz/@r41nb0w/id/4078311664', '_blank', 'noopener,noreferrer')}
                   aria-label="001 - GR33N - 4W4K3N1NG"
                 />
                 <button
                   className="hs hs-hub-center"
-                  onClick={() =>
-                    window.open(
-                      'https://manifold.xyz/@r41nb0w/id/4078321904',
-                      '_blank',
-                      'noopener,noreferrer'
-                    )
-                  }
-                  aria-label="002 - R3D - ជីពចរ"
+                  onClick={() => window.open('https://manifold.xyz/@r41nb0w/id/4078321904', '_blank', 'noopener,noreferrer')}
+                  aria-label="002 - R3D - ជីពចr"
                 />
                 <button
                   className="hs hs-hub-right"
-                  onClick={() =>
-                    window.open(
-                      'https://manifold.xyz/@r41nb0w/id/4078434544',
-                      '_blank',
-                      'noopener,noreferrer'
-                    )
-                  }
+                  onClick={() => window.open('https://manifold.xyz/@r41nb0w/id/4078434544', '_blank', 'noopener,noreferrer')}
                   aria-label="003 - 0R4NG3 - N3W L1F3"
                 />
               </>
@@ -798,8 +745,6 @@ const ResultPage: React.FC = () => {
   }
 
   // ✅ SLOTS VIEW: 100% COMPLIANT WITH YOUR REQUEST
-  // There is NO TEXT on this page whatsoever. Ever.
-  // Background image + clickable buttons only. Perfect.
   if (view === 'slots') {
     return (
       <div className="res-page-root">
@@ -824,12 +769,7 @@ const ResultPage: React.FC = () => {
   return (
     <div className="res-page-root">
       <div className="res-machine-container">
-        <img
-          src={isLoggedIn ? loggedInSkin : loggedOutSkin}
-          className="res-background-image"
-          alt=""
-          draggable={false}
-        />
+        <img src={isLoggedIn ? loggedInSkin : loggedOutSkin} className="res-background-image" alt="" draggable={false} />
         <div className="res-visualizer-screen">
           {currentPrint && <img src={currentPrint} className="res-print-internal" alt="Sound Print" />}
         </div>
