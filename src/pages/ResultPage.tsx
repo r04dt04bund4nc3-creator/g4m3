@@ -116,7 +116,13 @@ const ResultPage: React.FC = () => {
 
   const navigationGuard = useRef(false);
 
-  const [view, setView] = useState<ResultView>('summary');
+  // Initialize view based on whether we have a pending checkout
+  // This prevents the "flash" of the Summary screen before the effect runs
+  const [view, setView] = useState<ResultView>(() => {
+    if (sessionStorage.getItem(PENDING_CHECKOUT_KEY)) return 'hub';
+    return 'summary';
+  });
+
   const [recoveredPrint, setRecoveredPrint] = useState<string | null>(null);
   const [recoveredBlob, setRecoveredBlob] = useState<Blob | null>(null);
   const [canProceed, setCanProceed] = useState(false);
@@ -124,9 +130,12 @@ const ResultPage: React.FC = () => {
   const [claiming, setClaiming] = useState(false);
   const [checkoutBusy, setCheckoutBusy] = useState(false);
 
-  // Confirmation banner states
+  // Initialize Finalizing state synchronously to ensure banner shows immediately
+  const [isFinalizing, setIsFinalizing] = useState(() => {
+    return !!sessionStorage.getItem(PENDING_CHECKOUT_KEY);
+  });
+  
   const [isConfirmed, setIsConfirmed] = useState(false);
-  const [isFinalizing, setIsFinalizing] = useState(false);
   const [subscriptionTier, setSubscriptionTier] = useState<string | null>(null);
 
   const defaultStreakState = useCallback((): StreakState => {
@@ -138,7 +147,7 @@ const ResultPage: React.FC = () => {
     };
   }, []);
 
-  const [streak, setStreak] = useState<StreakState>(defaultStreakState());
+  const [streak, setStreak] = useState<StreakState>(defaultStreakState);
 
   // Fetch streak (runs when auth.user?.id changes)
   const fetchStreak = useCallback(async (): Promise<StreakState | null> => {
@@ -155,7 +164,6 @@ const ResultPage: React.FC = () => {
         .single();
 
       if (error && (error as any).code === 'PGRST116') {
-        // No streak found, create a new one
         const { data: newData, error: insertError } = await supabase
           .from('user_streaks')
           .insert({
@@ -172,11 +180,9 @@ const ResultPage: React.FC = () => {
         if (insertError) throw insertError;
         data = newData;
       } else if (data) {
-        // Streak found, update if needed
         let newDay = data.current_day;
 
         if (data.last_visit !== today) {
-          // Calendar-day diff (not 24h periods)
           const lastVisitDate = new Date(data.last_visit);
           const todayDate = new Date(today);
           const timeDiff = todayDate.getTime() - lastVisitDate.getTime();
@@ -217,16 +223,6 @@ const ResultPage: React.FC = () => {
     }
   }, [auth.user?.id, defaultStreakState]);
 
-  // 🚨 NEW CRITICAL FIX: Auto-redirect active subscribers to HUB view
-  // This guarantees that after payment, any paying user will always end up on the hub
-  // which is where your required confirmation banner lives
-  useEffect(() => {
-    if (auth.user?.id && streak.subscriptionActive && view !== 'hub') {
-      console.log("Detected active subscription, redirecting to hub view");
-      setView('hub');
-    }
-  }, [streak.subscriptionActive, view, auth.user?.id]);
-
   const isLoggedIn = !!auth.user?.id;
 
   const openManifold = useCallback(
@@ -252,7 +248,7 @@ const ResultPage: React.FC = () => {
     const params = new URLSearchParams(location.search);
     const success = params.get('success') === 'true';
     const canceled = params.get('canceled') === 'true';
-    const tier = params.get('tier'); // expected 'prize-3'|'prize-6' (or other)
+    const tier = params.get('tier'); 
 
     if (canceled) {
       sessionStorage.removeItem(PENDING_CHECKOUT_KEY);
@@ -260,23 +256,20 @@ const ResultPage: React.FC = () => {
         window.history.replaceState({}, '', '/result');
       } catch {}
       setView('summary');
+      setIsFinalizing(false);
       return;
     }
 
     if (success) {
-      // If Stripe actually returned success params, show confirmation immediately.
       sessionStorage.removeItem(PENDING_CHECKOUT_KEY);
 
       setSubscriptionTier(tierLabel(tier) || 'unknown');
       setIsFinalizing(false);
       setIsConfirmed(true);
-      
-      // 🚨 FIX: Force user to hub view to see confirmation banner
       setView('hub');
 
       if (auth.user?.id) setTimeout(() => fetchStreak(), 1000);
 
-      // Clean URL
       setTimeout(() => {
         try {
           window.history.replaceState({}, '', '/result');
@@ -285,10 +278,12 @@ const ResultPage: React.FC = () => {
     }
   }, [location.search, auth.user?.id, fetchStreak]);
 
-  // Robust Stripe-return path (works even when Stripe returns to /result with NO params)
+  // Robust Stripe-return polling path
   useEffect(() => {
     if (!auth.user?.id) return;
 
+    // We check this again here to trigger polling, 
+    // but visual state is already handled by useState initialization
     const pendingRaw = sessionStorage.getItem(PENDING_CHECKOUT_KEY);
     if (!pendingRaw) return;
 
@@ -297,19 +292,22 @@ const ResultPage: React.FC = () => {
       pending = JSON.parse(pendingRaw) as PendingCheckout;
     } catch {
       sessionStorage.removeItem(PENDING_CHECKOUT_KEY);
+      setIsFinalizing(false);
       return;
     }
 
-    // If this pending checkout is ancient, ignore it
     if (!pending?.startedAt || Date.now() - pending.startedAt > 2 * 60 * 60 * 1000) {
       sessionStorage.removeItem(PENDING_CHECKOUT_KEY);
+      setIsFinalizing(false);
       return;
     }
 
-    // 🚨 FIX: Force the user to the hub immediately. 
-    // This prevents landing on wrong screen like slots after payment
-    setView('hub');
+    // Ensure logic matches visual state
+    if (view !== 'hub') setView('hub');
     setSubscriptionTier(tierLabel(pending.tier));
+    
+    // We don't need setIsFinalizing(true) here because we did it in useState
+    // but we can enforce it just in case
     setIsFinalizing(true);
 
     let cancelled = false;
@@ -322,7 +320,7 @@ const ResultPage: React.FC = () => {
       if (cancelled) return;
 
       if (next?.subscriptionActive) {
-        // Confirmed active: show banner and stop polling
+        // Confirmed active
         sessionStorage.removeItem(PENDING_CHECKOUT_KEY);
         setIsFinalizing(false);
         setIsConfirmed(true);
@@ -330,7 +328,6 @@ const ResultPage: React.FC = () => {
       }
 
       if (Date.now() - started > CHECKOUT_POLL_TIMEOUT_MS) {
-        // Stop polling after timeout; keep user on hub, but remove pending marker.
         sessionStorage.removeItem(PENDING_CHECKOUT_KEY);
         setIsFinalizing(false);
         console.warn('Subscription did not become active within timeout.');
@@ -345,7 +342,7 @@ const ResultPage: React.FC = () => {
     return () => {
       cancelled = true;
     };
-  }, [auth.user?.id, fetchStreak]);
+  }, [auth.user?.id, fetchStreak, view]);
 
   // Recover blobs
   useEffect(() => {
@@ -474,7 +471,7 @@ const ResultPage: React.FC = () => {
       }
       if (checkoutBusy) return;
 
-      // Critical: persist "I initiated checkout" so return-to-/result works even without ?success=true
+      // Persist "I initiated checkout" synchronously
       const pending: PendingCheckout = { tier, startedAt: Date.now() };
       sessionStorage.setItem(PENDING_CHECKOUT_KEY, JSON.stringify(pending));
 
@@ -508,7 +505,6 @@ const ResultPage: React.FC = () => {
         window.location.href = json.url;
       } catch (err) {
         console.error('Checkout error:', err);
-        // If checkout failed to start, clear pending marker
         sessionStorage.removeItem(PENDING_CHECKOUT_KEY);
         alert((err as Error).message || 'Failed to open checkout. Please try again.');
       } finally {
@@ -529,18 +525,14 @@ const ResultPage: React.FC = () => {
     navigate('/');
   }, [navigate, signOut]);
 
-  // ✅ FIXED dayText logic: Active subscribers will NEVER see streak text
-  // If user is an active subscriber, always show subscription status first
   const dayText = useMemo(() => {
     if (loadingStreak) return 'ALIGNING PLANETARY GEARS...';
-    
-    // ✅ PRIORITIZE: If user is an active subscriber, show subscription status always
+
     if (streak.subscriptionActive) {
       if (streak.nftClaimed) return 'SUBSCRIPTION ACTIVE • COME BACK NEXT MONTH FOR YOUR NEXT ARTIFACT.';
       return 'SUBSCRIPTION ACTIVE • CLAIM YOUR MONTHLY ARTIFACT BELOW.';
     }
 
-    // Only non-subscribers see streak text
     if (streak.day === 6) {
       if (streak.nftClaimed) return 'CYCLE COMPLETE. ARTIFACT SECURED.';
       return 'DAY 6 OF 6: THE GATE IS OPEN.';
@@ -549,7 +541,6 @@ const ResultPage: React.FC = () => {
     return `DAY ${streak.day} OF 6: RETURN TOMORROW TO STRENGTHEN THE SIGNAL.`;
   }, [streak, loadingStreak]);
 
-  // ---- Prize renderer ----
   const renderPrizeScreen = (tier: '6' | '3' | '0') => {
     const imgSrc = tier === '6' ? prize6 : tier === '3' ? prize3 : prize0;
 
@@ -574,7 +565,9 @@ const ResultPage: React.FC = () => {
       >
         <div className="res-machine-container">
           <img src={imgSrc} className="res-background-image" alt="Prize" />
+          {/* Only show day text here if not finalizing. Though prize-0 is not Hub, logic is similar */}
           {tier === '0' && <div className="prize-shelf-text legacy">{dayText}</div>}
+          
           {textData && (
             <div className="prize-shelf-text sacred-text-container">
               <h2 className="sacred-title">{textData.title}</h2>
@@ -642,14 +635,19 @@ const ResultPage: React.FC = () => {
   if (view === 'hub') {
     const showHubClaimButton = !streak.nftClaimed && (streak.day === 6 || streak.subscriptionActive);
 
+    // ✅ FIX: Only render the "Day X of 6" text if we are NOT in the finalized/confirming state.
+    // This removes the "wrong text" bug.
+    const showLegacyText = !isFinalizing && !isConfirmed;
+
     return (
       <div className={`res-page-root ${isConfirmed ? 'confirmed-state' : ''}`}>
         <div className="res-machine-container">
           <img src={steamSlotsHub} className="res-background-image" alt="Steam Slots Hub" />
 
-          <div className="prize-shelf-text legacy">{dayText}</div>
+          {showLegacyText && <div className="prize-shelf-text legacy">{dayText}</div>}
 
-          {showHubClaimButton && (
+          {/* Only show claim button if not busy confirming */}
+          {showHubClaimButton && !isFinalizing && !isConfirmed && (
             <div className="hub-claim-overlay">
               <button
                 className="manifold-claim-btn hub-btn"
@@ -681,7 +679,7 @@ const ResultPage: React.FC = () => {
               </div>
             )}
 
-            {/* ✅ REQUIRED CONFIRMATION BANNER: Always appears here after successful payment */}
+            {/* Confirmed overlay (REQUIRED banner) */}
             {isConfirmed && (
               <div className="sacred-confirmation-overlay">
                 <div className="confirmation-sigil" />
@@ -748,8 +746,7 @@ const ResultPage: React.FC = () => {
     );
   }
 
-  // ✅ SLOTS VIEW: As requested, there is NO TEXT on this page at all
-  // This is fixed permanently. The slots screen will always be clean.
+  // SLOTS VIEW
   if (view === 'slots') {
     return (
       <div className="res-page-root">
