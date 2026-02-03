@@ -129,6 +129,19 @@ const ResultPage: React.FC = () => {
   const [isFinalizing, setIsFinalizing] = useState(false);
   const [subscriptionTier, setSubscriptionTier] = useState<string | null>(null);
 
+  // ──────────────────────────────────────────────────────────────
+  // BLACK-SCREEN FIX #1: Auth stuck guard (prevents infinite spinner)
+  // ──────────────────────────────────────────────────────────────
+  const [authStuckGuard, setAuthStuckGuard] = useState(false);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (auth.isLoading) setAuthStuckGuard(true);
+    }, 4000);
+    return () => clearTimeout(timer);
+  }, [auth.isLoading]);
+  // ──────────────────────────────────────────────────────────────
+
   const defaultStreakState = useCallback((): StreakState => {
     return {
       day: 1,
@@ -151,11 +164,11 @@ const ResultPage: React.FC = () => {
   // Fetch streak (runs when auth.user?.id changes)
   const fetchStreak = useCallback(async (forceRefresh = false): Promise<StreakState | null> => {
     if (!auth.user?.id) return null;
-
+    
     if (!forceRefresh) {
       setLoadingStreak(true);
     }
-
+    
     const today = new Date().toISOString().split('T')[0];
 
     try {
@@ -166,7 +179,6 @@ const ResultPage: React.FC = () => {
         .single();
 
       if (error && (error as any).code === 'PGRST116') {
-        // No streak found, create a new one
         const { data: newData, error: insertError } = await supabase
           .from('user_streaks')
           .insert({
@@ -183,11 +195,9 @@ const ResultPage: React.FC = () => {
         if (insertError) throw insertError;
         data = newData;
       } else if (data) {
-        // Streak found, update if needed
         let newDay = data.current_day;
 
         if (data.last_visit !== today) {
-          // Calendar-day diff (not 24h periods)
           const lastVisitDate = new Date(data.last_visit);
           const todayDate = new Date(today);
           const timeDiff = todayDate.getTime() - lastVisitDate.getTime();
@@ -255,11 +265,14 @@ const ResultPage: React.FC = () => {
     const canceled = params.get('canceled') === 'true';
     const tier = params.get('tier');
 
+    // BLACK-SCREEN FIX #2: Protect Supabase OAuth hash from being wiped
+    const isAuthRedirect = window.location.hash.includes('access_token=');
+
     if (canceled) {
       sessionStorage.removeItem(PENDING_CHECKOUT_KEY);
-      try {
-        window.history.replaceState({}, '', '/result');
-      } catch {}
+      if (!isAuthRedirect) {
+        try { window.history.replaceState({}, '', '/result'); } catch {}
+      }
       setView('summary');
       return;
     }
@@ -270,25 +283,22 @@ const ResultPage: React.FC = () => {
 
       setSubscriptionTier(tierLabel(tier) || 'unknown');
       setIsFinalizing(false);
-
-      // Immediately assume subscription is active for UI purposes
+      
       setStreak(prev => ({ ...prev, subscriptionActive: true }));
 
-      // Show confirmation banner if NFT not claimed yet
       if (!streak.nftClaimed) {
         setIsConfirmed(true);
       }
 
       if (auth.user?.id) {
-        setTimeout(() => fetchStreak(true), 1500); // Refetch streak data to confirm
+        setTimeout(() => fetchStreak(true), 1500);
       }
 
-      // Clean URL
-      setTimeout(() => {
-        try {
-          window.history.replaceState({}, '', '/result');
-        } catch {}
-      }, 500);
+      if (!isAuthRedirect) {
+        setTimeout(() => {
+          try { window.history.replaceState({}, '', '/result'); } catch {}
+        }, 500);
+      }
     }
   }, [location.search, auth.user?.id, fetchStreak, streak.nftClaimed]);
 
@@ -307,7 +317,6 @@ const ResultPage: React.FC = () => {
       return;
     }
 
-    // If this pending checkout is ancient, ignore it
     if (!pending?.startedAt || Date.now() - pending.startedAt > 2 * 60 * 60 * 1000) {
       sessionStorage.removeItem(PENDING_CHECKOUT_KEY);
       return;
@@ -315,7 +324,7 @@ const ResultPage: React.FC = () => {
 
     console.log("✅ Stripe pending payment detected (via session storage)");
     setSubscriptionTier(tierLabel(pending.tier));
-    setIsFinalizing(true); // Indicate we are finalizing
+    setIsFinalizing(true);
 
     let cancelled = false;
     const started = Date.now();
@@ -323,15 +332,15 @@ const ResultPage: React.FC = () => {
     const poll = async () => {
       if (cancelled) return;
 
-      const next = await fetchStreak(true); // Force refresh streak
+      const next = await fetchStreak(true);
       if (cancelled) return;
 
       if (next?.subscriptionActive) {
         sessionStorage.removeItem(PENDING_CHECKOUT_KEY);
-        setStreak(prev => ({ ...prev, subscriptionActive: true })); // Ensure local state is updated
+        setStreak(prev => ({ ...prev, subscriptionActive: true }));
         setIsFinalizing(false);
         if (!next.nftClaimed) {
-          setIsConfirmed(true); // Show confirmation banner if NFT not claimed
+          setIsConfirmed(true);
         }
         return;
       }
@@ -353,7 +362,7 @@ const ResultPage: React.FC = () => {
     };
   }, [auth.user?.id, fetchStreak]);
 
-  // Recover blobs - FIXED: Added error handling and cleanup
+  // Recover blobs
   useEffect(() => {
     const run = async () => {
       try {
@@ -361,22 +370,12 @@ const ResultPage: React.FC = () => {
         if (savedPrint) setRecoveredPrint(savedPrint);
         const blob = await loadBlob(RECOVERY_BLOB_KEY);
         if (blob) setRecoveredBlob(blob);
-      } catch (err) {
-        console.error('Recovery failed:', err);
-        sessionStorage.removeItem(RECOVERY_PRINT_KEY);
+      } catch (e) {
+        console.warn("Recovery failed:", e);
       }
     };
     run();
   }, []);
-
-  // Clear recovery data once logged in - NEW: Prevents stale data
-  useEffect(() => {
-    if (auth.user?.id) {
-      sessionStorage.removeItem(RECOVERY_PRINT_KEY);
-      setRecoveredPrint(null);
-      setRecoveredBlob(null);
-    }
-  }, [auth.user?.id]);
 
   // Reveal timer
   useEffect(() => {
@@ -419,9 +418,12 @@ const ResultPage: React.FC = () => {
     }
   }, [auth.user?.id, fetchStreak, defaultStreakState]);
 
-  // FIXED: Safe access to ritual with fallback
   const effectiveBlob = state.recordingBlob ?? recoveredBlob ?? null;
-  const currentPrint = ritual?.soundPrintDataUrl || recoveredPrint; // Added optional chaining
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // BLACK-SCREEN FIX #3: Safe optional chaining on ritual (prevents crash on load)
+  // ──────────────────────────────────────────────────────────────────────────
+  const currentPrint = ritual?.soundPrintDataUrl || recoveredPrint;
 
   const handleSocialLogin = useCallback(
     async (provider: 'discord' | 'google') => {
@@ -434,14 +436,16 @@ const ResultPage: React.FC = () => {
           console.warn(e);
         }
       }
-      if (ritual?.soundPrintDataUrl) { // Added optional chaining
+      
+      // Safe access
+      if (ritual?.soundPrintDataUrl) {
         sessionStorage.setItem(RECOVERY_PRINT_KEY, ritual.soundPrintDataUrl);
       }
 
       if (provider === 'discord') await signInWithDiscord();
       else await signInWithGoogle();
     },
-    [state.recordingBlob, ritual?.soundPrintDataUrl, trackEvent, signInWithDiscord, signInWithGoogle]
+    [state.recordingBlob, ritual, trackEvent, signInWithDiscord, signInWithGoogle]
   );
 
   const downloadAndSpin = useCallback(() => {
@@ -473,12 +477,11 @@ const ResultPage: React.FC = () => {
         .update({ nft_claimed: true })
         .eq('user_id', auth.user.id);
 
-      // Once user claims NFT, hide the confirmation banner
-      setStreak(prev => ({
-        ...prev,
-        nftClaimed: true
+      setStreak(prev => ({ 
+        ...prev, 
+        nftClaimed: true 
       }));
-      setIsConfirmed(false); // Hide the confirmation state
+      setIsConfirmed(false);
 
       trackEvent('nft_claimed', { day: streak.day, isSubscriber: streak.subscriptionActive });
 
@@ -503,7 +506,6 @@ const ResultPage: React.FC = () => {
       }
       if (checkoutBusy) return;
 
-      // Persist checkout attempt so return works even without query params
       const pending: PendingCheckout = { tier, startedAt: Date.now() };
       sessionStorage.setItem(PENDING_CHECKOUT_KEY, JSON.stringify(pending));
 
@@ -557,22 +559,18 @@ const ResultPage: React.FC = () => {
     navigate('/');
   }, [navigate, signOut]);
 
-  // ✅ FINAL FIXED TEXT LOGIC:
   const dayText = useMemo(() => {
     if (loadingStreak) return 'ALIGNING PLANETARY GEARS...';
-
-    // #1 PRIORITY: Any active subscriber will ONLY see subscription text. Ever.
+    
     if (streak.subscriptionActive) {
       if (streak.nftClaimed) return 'SUBSCRIPTION ACTIVE • COME BACK NEXT MONTH FOR YOUR NEXT ARTIFACT.';
       return 'SUBSCRIPTION ACTIVE • CLAIM YOUR MONTHLY ARTIFACT BELOW.';
     }
 
-    // #2 RULE: Consecutive day text CANNOT appear on slots or hub screens
     if (view !== 'prize-0') {
       return "";
     }
 
-    // Only non-subscribers, on prize-0 screen, see streak text
     if (streak.day === 6) {
       if (streak.nftClaimed) return 'CYCLE COMPLETE. ARTIFACT SECURED.';
       return 'DAY 6 OF 6: THE GATE IS OPEN.';
@@ -581,7 +579,6 @@ const ResultPage: React.FC = () => {
     return `DAY ${streak.day} OF 6: RETURN TOMORROW TO STRENGTHEN THE SIGNAL.`;
   }, [streak, loadingStreak, view]);
 
-  // ---- Prize renderer ----
   const renderPrizeScreen = (tier: '6' | '3' | '0') => {
     const imgSrc = tier === '6' ? prize6 : tier === '3' ? prize3 : prize0;
 
@@ -606,11 +603,11 @@ const ResultPage: React.FC = () => {
       >
         <div className="res-machine-container">
           <img src={imgSrc} className="res-background-image" alt="Prize" />
-
+          
           {tier === '0' && dayText && (
             <div className="prize-shelf-text legacy">{dayText}</div>
           )}
-
+          
           {textData && (
             <div className="prize-shelf-text sacred-text-container">
               <h2 className="sacred-title">{textData.title}</h2>
@@ -665,8 +662,8 @@ const ResultPage: React.FC = () => {
     );
   };
 
-  // AUTH LOADING
-  if (auth.isLoading) {
+  // AUTH LOADING — now protected against black screen
+  if (auth.isLoading && !authStuckGuard) {
     return (
       <div className="res-page-root">
         <div className="loading-spinner">SYNCING ASTRAL SIGNAL...</div>
@@ -676,10 +673,6 @@ const ResultPage: React.FC = () => {
 
   // HUB VIEW
   if (view === 'hub') {
-    // 🚨 FIX: This condition now correctly triggers the big purple button for:
-    // 1. Day 6 users (who haven't claimed)
-    // 2. Existing subscribers (who haven't claimed)
-    // 3. *Just-subscribed* users (due to 'isConfirmed' becoming true)
     const showHubClaimButton = !streak.nftClaimed && (streak.day === 6 || streak.subscriptionActive || isConfirmed);
 
     return (
@@ -687,12 +680,11 @@ const ResultPage: React.FC = () => {
         <div className="res-machine-container">
           <img src={steamSlotsHub} className="res-background-image" alt="Steam Slots Hub" />
 
-          {/* Hub screen: Subscribers see subscription text. Non-subscribers on hub see no day text. */}
           {dayText && (
             <div className="prize-shelf-text legacy">{dayText}</div>
           )}
 
-          {showHubClaimButton && ( // This is YOUR big purple button
+          {showHubClaimButton && (
             <div className="hub-claim-overlay">
               <button
                 className="manifold-claim-btn hub-btn"
@@ -705,7 +697,6 @@ const ResultPage: React.FC = () => {
           )}
 
           <div className="res-interactive-layer">
-            {/* Finalizing overlay (post-checkout, waiting for webhook) */}
             {isFinalizing && !isConfirmed && (
               <div className="sacred-confirmation-overlay">
                 <div className="confirmation-sigil" />
@@ -724,10 +715,7 @@ const ResultPage: React.FC = () => {
               </div>
             )}
 
-            {/* 🚨 FIX: The old sacred-confirmation-overlay is now GONE. */}
-            {/* It is replaced by the 'hub-claim-overlay' controlled by showHubClaimButton. */}
-
-            {!showHubClaimButton && !isFinalizing && ( // Only render portals if no big button or finalizing message is showing
+            {!showHubClaimButton && !isFinalizing && (
               <>
                 <button
                   className="hs hs-hub-left"
@@ -772,7 +760,6 @@ const ResultPage: React.FC = () => {
     );
   }
 
-  // ✅ SLOTS VIEW: 100% COMPLIANT WITH YOUR REQUEST
   if (view === 'slots') {
     return (
       <div className="res-page-root">
@@ -788,12 +775,11 @@ const ResultPage: React.FC = () => {
     );
   }
 
-  // PRIZE VIEWS
   if (view === 'prize-0') return renderPrizeScreen('0');
   if (view === 'prize-3') return renderPrizeScreen('3');
   if (view === 'prize-6') return renderPrizeScreen('6');
 
-  // SUMMARY (LOGIN) VIEW - FIXED: Added safe access to ritual
+  // SUMMARY (LOGIN) VIEW
   return (
     <div className="res-page-root">
       <div className="res-machine-container">
