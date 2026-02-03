@@ -30,7 +30,7 @@ interface AuthState {
 
 interface AppContextType {
   audio: AudioState;
-  state: AudioState; // Kept for backward compatibility
+  state: AudioState;
   ritual: RitualState;
   auth: AuthState;
   setFile: (file: File) => void;
@@ -78,7 +78,6 @@ const initialAuthState: AuthState = {
 
 const AppContext = createContext<AppContextType | null>(null);
 
-// Helper for storage
 const blobToDataURL = (blob: Blob) =>
   new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
@@ -132,13 +131,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setAuth({ user: session?.user || null, isLoading: false, error: null });
       if (session?.user) restorePostAuthState();
     });
 
-    // Check initial session
     supabase.auth.getSession().then(({ data: { session } }) => {
       setAuth({ user: session?.user || null, isLoading: false, error: null });
       if (session?.user) restorePostAuthState();
@@ -168,9 +165,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (ritual.finalEQState?.length) {
         sessionStorage.setItem('g4m3_final_eq', JSON.stringify(ritual.finalEQState));
       }
-      sessionStorage.setItem('post-auth-redirect', 'result');
+      // ✅ KEY FIX: Tell callback where to go after auth
+      sessionStorage.setItem('post-auth-redirect', '/result');
     } catch (e) {
-      console.warn('Persist before OAuth failed (likely quota exceeded):', e);
+      console.warn('Persist before OAuth failed:', e);
     }
   }, [audio.recordingBlob, audio.file?.name, ritual.soundPrintDataUrl, ritual.finalEQState]);
 
@@ -179,7 +177,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     await persistBeforeOAuth();
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'discord',
-      options: { redirectTo: `${window.location.origin}/result` }, // ✅ FIXED: Redirects back to ResultPage
+      options: { 
+        redirectTo: `${window.location.origin}/auth/callback`,
+        // ✅ CRITICAL: Skip browser popup blockers
+        skipBrowserRedirect: false,
+      },
     });
     if (error) setAuth(prev => ({ ...prev, error: error.message }));
   }, [persistBeforeOAuth]);
@@ -189,7 +191,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     await persistBeforeOAuth();
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: `${window.location.origin}/result` }, // ✅ FIXED: Redirects back to ResultPage
+      options: { 
+        redirectTo: `${window.location.origin}/auth/callback`,
+        skipBrowserRedirect: false,
+      },
     });
     if (error) setAuth(prev => ({ ...prev, error: error.message }));
   }, [persistBeforeOAuth]);
@@ -199,7 +204,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     await persistBeforeOAuth();
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'twitter',
-      options: { redirectTo: `${window.location.origin}/result` }, // ✅ Also fixed for X
+      options: { 
+        redirectTo: `${window.location.origin}/auth/callback`,
+        skipBrowserRedirect: false,
+      },
     });
     if (error) setAuth(prev => ({ ...prev, error: error.message }));
   }, [persistBeforeOAuth]);
@@ -214,7 +222,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const signOut = useCallback(async () => {
     const { error } = await supabase.auth.signOut();
     if (error) console.error('Sign out error:', error);
-    reset(); // Clean up state on signout
+    reset();
   }, []);
 
   const saveRecording = useCallback(async (blob: Blob, finalEQ: number[]) => {
@@ -257,7 +265,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (error) console.error('Error saving performance:', error);
   }, [auth.user, ritual.soundPrintDataUrl]);
 
-  // UI helpers
   const setSoundPrint = useCallback((data: any) => { if (data?.dataUrl) captureSoundPrint(data.dataUrl); }, [captureSoundPrint]);
   const setFile = useCallback((file: File) => { setAudio(prev => ({ ...prev, file, isProcessing: true })); }, []);
   const setAudioBuffer = useCallback((buffer: AudioBuffer) => {
@@ -283,7 +290,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   return (
     <AppContext.Provider value={{
       audio,
-      state: audio, // Backward compatibility
+      state: audio,
       ritual,
       auth,
       setFile,

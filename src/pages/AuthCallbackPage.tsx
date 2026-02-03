@@ -7,7 +7,6 @@ export default function AuthCallbackPage() {
   const processedRef = useRef(false);
 
   useEffect(() => {
-    // Prevent double-processing in React StrictMode
     if (processedRef.current) return;
     processedRef.current = true;
 
@@ -26,30 +25,26 @@ export default function AuthCallbackPage() {
         }
 
         if (hasCode) {
-          // ✅ FIXED: Proper PKCE exchange with retry logic
           while (retryCount < maxRetries) {
             try {
               const { error } = await supabase.auth.exchangeCodeForSession(window.location.href);
               if (error) throw error;
-              break; // Success
+              break;
             } catch (pkceErr: any) {
               retryCount++;
               console.warn(`PKCE attempt ${retryCount} failed:`, pkceErr.message);
               
               if (retryCount >= maxRetries) {
-                // Final fallback: check if session exists anyway
                 const { data } = await supabase.auth.getSession();
                 if (!data.session) throw pkceErr;
                 console.warn('PKCE failed but session recovered via fallback');
               } else {
-                // Wait before retry
                 await new Promise(r => setTimeout(r, 500 * retryCount));
               }
             }
           }
         }
 
-        // ✅ FIXED: Verify session is actually established before redirect
         let sessionVerified = false;
         let verifyAttempts = 0;
         while (!sessionVerified && verifyAttempts < 10) {
@@ -66,14 +61,16 @@ export default function AuthCallbackPage() {
           throw new Error('Session could not be verified');
         }
 
-        // Small settling delay for state propagation
         await new Promise(r => setTimeout(r, 300));
         if (cancelled) return;
 
-        const dest = sessionStorage.getItem('post-auth-redirect') || '/result';
+        // ✅ ROBUST: Handle both '/result' and 'result'
+        let dest = sessionStorage.getItem('post-auth-redirect') || '/result';
         sessionStorage.removeItem('post-auth-redirect');
+        
+        // Ensure leading slash
+        if (!dest.startsWith('/')) dest = '/' + dest;
 
-        // ✅ Use replace to prevent back-button issues
         window.location.replace(dest);
       } catch (e: any) {
         console.error('Auth Error:', e);
