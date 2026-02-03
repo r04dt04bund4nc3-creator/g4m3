@@ -153,13 +153,29 @@ const ResultPage: React.FC = () => {
 
   const [streak, setStreak] = useState<StreakState>(defaultStreakState());
 
-  // 🚨 GLOBAL FIX: Ensures view is always 'hub' if a payment flow is active or user is subscribed
+  // 🚨 FIXED GLOBAL VIEW ENFORCER:
+  // Now forces view to 'hub' for:
+  // 1. Subscribed users
+  // 2. Payment confirmed/finalizing users
+  // 3. ✅ NEW: Day 6 users who haven't claimed their NFT yet
   useEffect(() => {
-    if (auth.user?.id && (streak.subscriptionActive || isConfirmed || isFinalizing) && view !== 'hub') {
-      console.log(`✅ Global View Enforcer: Forcing view to 'hub'. Current view: ${view}`);
-      setView('hub');
+    if (auth.user?.id) {
+      const shouldBeOnHub = 
+        streak.subscriptionActive || 
+        isConfirmed || 
+        isFinalizing ||
+        (streak.day >= 6 && !streak.nftClaimed);
+
+      if (shouldBeOnHub && view !== 'hub') {
+        console.log(`✅ Global View Enforcer: Forcing view to 'hub'. 
+          Current view: ${view}, 
+          Day: ${streak.day}, 
+          NFT Claimed: ${streak.nftClaimed},
+          Subscribed: ${streak.subscriptionActive}`);
+        setView('hub');
+      }
     }
-  }, [auth.user?.id, streak.subscriptionActive, isConfirmed, isFinalizing, view]);
+  }, [auth.user?.id, streak.subscriptionActive, isConfirmed, isFinalizing, streak.day, streak.nftClaimed, view]);
 
   // Fetch streak (runs when auth.user?.id changes)
   const fetchStreak = useCallback(async (forceRefresh = false): Promise<StreakState | null> => {
@@ -418,12 +434,16 @@ const ResultPage: React.FC = () => {
     }
   }, [auth.user?.id, fetchStreak, defaultStreakState]);
 
+  // ✅ FIX: For Day 6 users who haven't claimed their NFT yet, show the claim button
+  useEffect(() => {
+    if (auth.user?.id && !streak.subscriptionActive && !streak.nftClaimed && streak.day >= 6) {
+      setIsConfirmed(true);
+    }
+  }, [auth.user?.id, streak.day, streak.subscriptionActive, streak.nftClaimed]);
+
   const effectiveBlob = state.recordingBlob ?? recoveredBlob ?? null;
   const currentPrint = ritual?.soundPrintDataUrl || recoveredPrint;
 
-  // ──────────────────────────────────────────────────────────────────────────
-  // BLACK-SCREEN FIX #3: Safe optional chaining on ritual (prevents crash on load)
-  // ──────────────────────────────────────────────────────────────────────────
   const handleSocialLogin = useCallback(
     async (provider: 'discord' | 'google') => {
       trackEvent('social_login_attempt', { provider });
@@ -557,16 +577,6 @@ const ResultPage: React.FC = () => {
     navigate('/');
   }, [navigate, signOut]);
 
-  // ──────────────────────────────────────────────────────────────────────────
-  // ✅ NEW FIX: Set isConfirmed = true for Day 6+ non-subscribers on login
-  // ──────────────────────────────────────────────────────────────────────────
-  useEffect(() => {
-    if (auth.user?.id && !streak.subscriptionActive && !streak.nftClaimed && streak.day >= 6) {
-      setIsConfirmed(true);
-    }
-  }, [auth.user?.id, streak.day, streak.subscriptionActive, streak.nftClaimed]);
-  // ──────────────────────────────────────────────────────────────────────────
-
   const dayText = useMemo(() => {
     if (loadingStreak) return 'ALIGNING PLANETARY GEARS...';
     
@@ -681,6 +691,10 @@ const ResultPage: React.FC = () => {
 
   // HUB VIEW
   if (view === 'hub') {
+    // This will now be true for:
+    // - Subscribers who haven't claimed
+    // - Day 6 users who haven't claimed
+    // - Users who just completed payment
     const showHubClaimButton = !streak.nftClaimed && (streak.day === 6 || streak.subscriptionActive || isConfirmed);
 
     return (
