@@ -130,7 +130,7 @@ const ResultPage: React.FC = () => {
   const [subscriptionTier, setSubscriptionTier] = useState<string | null>(null);
 
   // ──────────────────────────────────────────────────────────────
-  // BLACK-SCREEN FIX: Auth stuck guard
+  // BLACK-SCREEN FIX: Auth stuck guard (prevents infinite spinner)
   // ──────────────────────────────────────────────────────────────
   const [authStuckGuard, setAuthStuckGuard] = useState(false);
 
@@ -153,13 +153,20 @@ const ResultPage: React.FC = () => {
 
   const [streak, setStreak] = useState<StreakState>(defaultStreakState());
 
-  // GLOBAL VIEW ENFORCER
+  // 🚨 FIXED GLOBAL VIEW ENFORCER:
+  // Now only forces view to 'hub' for:
+  // 1. Subscribed users
+  // 2. Payment confirmed/finalizing users
+  // ✅ ALLOWS Day 6 users to stay on prize-0 screen as you intended
   useEffect(() => {
     if (auth.user?.id) {
-      // Force to Hub ONLY for subscribers or active payments
-      const shouldForceHub = streak.subscriptionActive || isConfirmed || isFinalizing;
+      const shouldBeOnHub = 
+        streak.subscriptionActive || 
+        isConfirmed || 
+        isFinalizing;
 
-      if (shouldForceHub && view !== 'hub') {
+      if (shouldBeOnHub && view !== 'hub') {
+        console.log(`✅ Global View Enforcer: Forcing view to 'hub'. Current view: ${view}`);
         setView('hub');
       }
     }
@@ -269,7 +276,7 @@ const ResultPage: React.FC = () => {
     const canceled = params.get('canceled') === 'true';
     const tier = params.get('tier');
 
-    // BLACK-SCREEN FIX: Protect Supabase OAuth hash
+    // BLACK-SCREEN FIX: Protect Supabase OAuth hash from being wiped
     const isAuthRedirect = window.location.hash.includes('access_token=');
 
     if (canceled) {
@@ -422,12 +429,15 @@ const ResultPage: React.FC = () => {
     }
   }, [auth.user?.id, fetchStreak, defaultStreakState]);
 
-  // ✅ DAY 6 FIX: Show button for Day 6 users who haven't claimed
+  // ──────────────────────────────────────────────────────────────────────────
+  // ✅ NEW FIX: Set isConfirmed = true for existing subscribers who haven't claimed their NFT
+  // ──────────────────────────────────────────────────────────────────────────
   useEffect(() => {
-    if (auth.user?.id && !streak.subscriptionActive && !streak.nftClaimed && streak.day >= 6) {
+    if (auth.user?.id && streak.subscriptionActive && !streak.nftClaimed) {
       setIsConfirmed(true);
     }
-  }, [auth.user?.id, streak.day, streak.subscriptionActive, streak.nftClaimed]);
+  }, [auth.user?.id, streak.subscriptionActive, streak.nftClaimed]);
+  // ──────────────────────────────────────────────────────────────────────────
 
   const effectiveBlob = state.recordingBlob ?? recoveredBlob ?? null;
   const currentPrint = ritual?.soundPrintDataUrl || recoveredPrint;
@@ -565,12 +575,10 @@ const ResultPage: React.FC = () => {
     navigate('/');
   }, [navigate, signOut]);
 
-  // ✅ SUBSCRIPTION FIX:
-  // Text will now show "SUBSCRIPTION ACTIVE" if user is marked as active in DB *OR* just finished paying (isConfirmed)
   const dayText = useMemo(() => {
     if (loadingStreak) return 'ALIGNING PLANETARY GEARS...';
     
-    if (streak.subscriptionActive || isConfirmed) {
+    if (streak.subscriptionActive) {
       if (streak.nftClaimed) return 'SUBSCRIPTION ACTIVE • COME BACK NEXT MONTH FOR YOUR NEXT ARTIFACT.';
       return 'SUBSCRIPTION ACTIVE • CLAIM YOUR MONTHLY ARTIFACT BELOW.';
     }
@@ -585,18 +593,13 @@ const ResultPage: React.FC = () => {
     }
 
     return `DAY ${streak.day} OF 6: RETURN TOMORROW TO STRENGTHEN THE SIGNAL.`;
-  }, [streak, loadingStreak, view, isConfirmed]);
+  }, [streak, loadingStreak, view]);
 
   const renderPrizeScreen = (tier: '6' | '3' | '0') => {
     const imgSrc = tier === '6' ? prize6 : tier === '3' ? prize3 : prize0;
 
-    // ✅ BUTTON LOGIC FIX:
-    // 1. Must not have claimed NFT.
-    // 2. IF subscriber (or just confirmed payment): Show on ANY screen (tier 0, 3, or 6).
-    // 3. IF free user: Show ONLY on tier 0.
     const showClaimBtn =
-      !streak.nftClaimed &&
-      ((streak.subscriptionActive || isConfirmed) || (tier === '0' && streak.day === 6));
+      tier === '0' && !streak.nftClaimed && (streak.day === 6 || streak.subscriptionActive);
 
     const textData = tier === '6' ? PRIZE_TEXTS[6] : tier === '3' ? PRIZE_TEXTS[3] : null;
 
