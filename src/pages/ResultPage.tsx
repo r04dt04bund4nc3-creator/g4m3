@@ -130,7 +130,7 @@ const ResultPage: React.FC = () => {
   const [subscriptionTier, setSubscriptionTier] = useState<string | null>(null);
 
   // ──────────────────────────────────────────────────────────────
-  // BLACK-SCREEN FIX: Auth stuck guard (prevents infinite spinner)
+  // BLACK-SCREEN FIX: Auth stuck guard
   // ──────────────────────────────────────────────────────────────
   const [authStuckGuard, setAuthStuckGuard] = useState(false);
 
@@ -153,20 +153,13 @@ const ResultPage: React.FC = () => {
 
   const [streak, setStreak] = useState<StreakState>(defaultStreakState());
 
-  // 🚨 FIXED GLOBAL VIEW ENFORCER:
-  // Now only forces view to 'hub' for:
-  // 1. Subscribed users
-  // 2. Payment confirmed/finalizing users
-  // ✅ ALLOWS Day 6 users to stay on prize-0 screen as you intended
+  // GLOBAL VIEW ENFORCER
   useEffect(() => {
     if (auth.user?.id) {
-      const shouldBeOnHub = 
-        streak.subscriptionActive || 
-        isConfirmed || 
-        isFinalizing;
+      // Force to Hub ONLY for subscribers or active payments
+      const shouldForceHub = streak.subscriptionActive || isConfirmed || isFinalizing;
 
-      if (shouldBeOnHub && view !== 'hub') {
-        console.log(`✅ Global View Enforcer: Forcing view to 'hub'. Current view: ${view}`);
+      if (shouldForceHub && view !== 'hub') {
         setView('hub');
       }
     }
@@ -276,7 +269,7 @@ const ResultPage: React.FC = () => {
     const canceled = params.get('canceled') === 'true';
     const tier = params.get('tier');
 
-    // BLACK-SCREEN FIX: Protect Supabase OAuth hash from being wiped
+    // BLACK-SCREEN FIX: Protect Supabase OAuth hash
     const isAuthRedirect = window.location.hash.includes('access_token=');
 
     if (canceled) {
@@ -429,6 +422,13 @@ const ResultPage: React.FC = () => {
     }
   }, [auth.user?.id, fetchStreak, defaultStreakState]);
 
+  // ✅ DAY 6 FIX: Show button for Day 6 users who haven't claimed
+  useEffect(() => {
+    if (auth.user?.id && !streak.subscriptionActive && !streak.nftClaimed && streak.day >= 6) {
+      setIsConfirmed(true);
+    }
+  }, [auth.user?.id, streak.day, streak.subscriptionActive, streak.nftClaimed]);
+
   const effectiveBlob = state.recordingBlob ?? recoveredBlob ?? null;
   const currentPrint = ritual?.soundPrintDataUrl || recoveredPrint;
 
@@ -565,10 +565,12 @@ const ResultPage: React.FC = () => {
     navigate('/');
   }, [navigate, signOut]);
 
+  // ✅ SUBSCRIPTION FIX:
+  // Text will now show "SUBSCRIPTION ACTIVE" if user is marked as active in DB *OR* just finished paying (isConfirmed)
   const dayText = useMemo(() => {
     if (loadingStreak) return 'ALIGNING PLANETARY GEARS...';
     
-    if (streak.subscriptionActive) {
+    if (streak.subscriptionActive || isConfirmed) {
       if (streak.nftClaimed) return 'SUBSCRIPTION ACTIVE • COME BACK NEXT MONTH FOR YOUR NEXT ARTIFACT.';
       return 'SUBSCRIPTION ACTIVE • CLAIM YOUR MONTHLY ARTIFACT BELOW.';
     }
@@ -583,13 +585,18 @@ const ResultPage: React.FC = () => {
     }
 
     return `DAY ${streak.day} OF 6: RETURN TOMORROW TO STRENGTHEN THE SIGNAL.`;
-  }, [streak, loadingStreak, view]);
+  }, [streak, loadingStreak, view, isConfirmed]);
 
   const renderPrizeScreen = (tier: '6' | '3' | '0') => {
     const imgSrc = tier === '6' ? prize6 : tier === '3' ? prize3 : prize0;
 
+    // ✅ BUTTON LOGIC FIX:
+    // 1. Must not have claimed NFT.
+    // 2. IF subscriber (or just confirmed payment): Show on ANY screen (tier 0, 3, or 6).
+    // 3. IF free user: Show ONLY on tier 0.
     const showClaimBtn =
-      tier === '0' && !streak.nftClaimed && (streak.day === 6 || streak.subscriptionActive);
+      !streak.nftClaimed &&
+      ((streak.subscriptionActive || isConfirmed) || (tier === '0' && streak.day === 6));
 
     const textData = tier === '6' ? PRIZE_TEXTS[6] : tier === '3' ? PRIZE_TEXTS[3] : null;
 
