@@ -4,7 +4,6 @@ import type { ReactNode } from 'react';
 import { supabase } from '../lib/supabaseClient';
 import type { Session, AuthError } from '@supabase/supabase-js';
 
-// ... (Interfaces remain the same) ...
 interface AudioState {
   file: File | null;
   audioBuffer: AudioBuffer | null;
@@ -154,7 +153,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     try {
       if (audio.recordingBlob) {
         const dataUrl = await blobToDataURL(audio.recordingBlob);
-        // Safety check: Don't try to store if it's likely to crash sessionStorage
         if (dataUrl.length < 4000000) { 
           sessionStorage.setItem('g4m3_recording_data_url', dataUrl);
         } else {
@@ -181,7 +179,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     await persistBeforeOAuth();
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'discord',
-      options: { redirectTo: `${window.location.origin}/auth/callback` },
+      options: { redirectTo: `${window.location.origin}/result` }, // ✅ FIXED: Redirects back to ResultPage
     });
     if (error) setAuth(prev => ({ ...prev, error: error.message }));
   }, [persistBeforeOAuth]);
@@ -191,7 +189,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     await persistBeforeOAuth();
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: `${window.location.origin}/auth/callback` },
+      options: { redirectTo: `${window.location.origin}/result` }, // ✅ FIXED: Redirects back to ResultPage
     });
     if (error) setAuth(prev => ({ ...prev, error: error.message }));
   }, [persistBeforeOAuth]);
@@ -201,7 +199,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     await persistBeforeOAuth();
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'twitter',
-      options: { redirectTo: `${window.location.origin}/auth/callback` },
+      options: { redirectTo: `${window.location.origin}/result` }, // ✅ Also fixed for X
     });
     if (error) setAuth(prev => ({ ...prev, error: error.message }));
   }, [persistBeforeOAuth]);
@@ -243,7 +241,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const savePerformance = useCallback(async (gestureData: any, trackName: string, trackHash: string) => {
-    // Optimization: Use context state instead of calling getUser() network request
     if (!auth.user) {
         console.error("Cannot save performance: No authenticated user.");
         return;
