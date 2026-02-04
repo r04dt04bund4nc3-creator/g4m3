@@ -75,27 +75,27 @@ type StreakState = {
 // Stripe-return robustness
 const PENDING_CHECKOUT_KEY = 'pending_checkout_v1';
 type PendingCheckout = { tier: 'prize-6' | 'prize-3'; startedAt: number };
-const CHECKOUT_POLL_INTERVAL_MS = 1000;
-const CHECKOUT_POLL_TIMEOUT_MS = 60000;
+const CHECKOUT_POLL_INTERVAL_MS = 1296;
+const CHECKOUT_POLL_TIMEOUT_MS = 46656;
 
 // Timing
-const REVEAL_DELAY_MS = 2000;
-const MONTHLY_TIMEOUT_MS = 20000;
-const ANNUAL_TIMEOUT_MS = 30000;
+const REVEAL_DELAY_MS = 2400;
+const MONTHLY_TIMEOUT_MS = 24000;
+const ANNUAL_TIMEOUT_MS = 24000;
 
 const PRIZE_TEXTS = {
   6: {
     title: 'MONTHLY KEEPER',
-    headline: '$6/month · 1 NFT per month',
-    body: 'Claim one NFT each month. Total claim value over 12 months: $468, $2808 in two years, $16,848 in three years.',
-    scarcity: 'Each new artifact is rarer than the last: 216 mints for NFT #1 → 1 mint of NFT #216.',
+    headline: '$6 per month for one monthly NFT',
+    body: 'Total annual claim value = $468. $2808 in two years. $16,848 in three years.',
+    scarcity: 'Each new artifact is rarer than the last: 1296 mints for NFT #1 → 6 mints of NFT #216.',
     cta: 'Get there first! TAP to lock in your position.',
   },
   3: {
     title: 'ANNUAL ARCHIVIST',
-    headline: '$3/month · 1 NFT per month',
-    body: 'Access the full 216-artifact archive for one year. Claim one NFT each month. Total claim value over 12 months: $468, $2808 in two years, $16,848 in three years.',
-    scarcity: 'Each new artifact is rarer than the last: 216 mints for NFT #1 → 1 mint of NFT #216.',
+    headline: '$3 per month for one monthly NFT',
+    body: 'Total annual claim value = $468. $2808 in two years. $16,848 in three years.',
+    scarcity: 'Each new artifact is rarer than the last: 1296 mints for NFT #1 → 6 mints of NFT #216.',
     cta: 'Get there first! TAP to lock in your position.',
   },
 };

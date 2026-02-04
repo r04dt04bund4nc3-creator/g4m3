@@ -17,7 +17,7 @@ const NFT_SCHEDULE = [
 
 // The codes you set in Manifold for each month
 const CLAIM_CODES = [
-  '4B4KU5SUB001', // Month 1
+  '0011296', // Month 1
   'REPLACETHIS', // Month 2
   'REPLACETHIS', // Month 3
 ];
