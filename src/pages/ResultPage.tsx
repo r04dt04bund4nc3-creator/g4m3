@@ -152,20 +152,23 @@ const ResultPage: React.FC = () => {
 
   const [streak, setStreak] = useState<StreakState>(defaultStreakState());
 
-  // GLOBAL VIEW ENFORCER
+  // 🚨 GLOBAL VIEW ENFORCER - OPTIMIZED FOR DOWNLOADS
   useEffect(() => {
     if (auth.user?.id) {
-      const shouldBeOnHub = 
-        streak.subscriptionActive || 
-        isConfirmed || 
-        isFinalizing;
+      // If there is a recording session in memory, we DON'T jump to the hub.
+      // This allows the user to land on 'summary' and click Download.
+      const hasActiveSession = !!(state.recordingBlob || recoveredBlob);
+      
+      const shouldForceHub = 
+        (streak.subscriptionActive || isConfirmed || isFinalizing) && 
+        !hasActiveSession;
 
-      if (shouldBeOnHub && view !== 'hub') {
+      if (shouldForceHub && view !== 'hub') {
         console.log(`✅ Global View Enforcer: Forcing view to 'hub'. Current view: ${view}`);
         setView('hub');
       }
     }
-  }, [auth.user?.id, streak.subscriptionActive, isConfirmed, isFinalizing, view]);
+  }, [auth.user?.id, streak.subscriptionActive, isConfirmed, isFinalizing, view, state.recordingBlob, recoveredBlob]);
 
   // Fetch streak
   const fetchStreak = useCallback(async (forceRefresh = false): Promise<StreakState | null> => {
@@ -505,8 +508,6 @@ const ResultPage: React.FC = () => {
           openManifold('claim_fallback');
         }
       } else {
-        // If result.success is false, we DON'T update the DB. 
-        // This keeps the button visible so the user can try again.
         console.warn('Claim result not successful, keeping button visible.');
         openManifold('claim_fallback');
       }
